@@ -7,25 +7,41 @@ import java.util.List;
 import CoreBox.PomodoroSession.*;
 import ExceptionsBox.BadStateException;
 import ExceptionsBox.BadUserInputException;
+import TatsuyaCommands.PomodoroCommand;
 import net.dv8tion.jda.api.Permission;
 import org.jetbrains.annotations.Nullable;
 
 import static CoreBox.PomodoroSession.minutesToTimeString;
 
+/**
+ * Settings such as work/study split for a particular pomodoro session
+ */
 public class PomodoroSettings {
+    /**
+     * Maximum allowed time input in minutes
+     */
     public static final int maxDuration = 60 * 5;
+    /**
+     * Minimum allowed time input in minutes
+     */
     public static final int minDuration = 5;
-    private Map<SessionState, StateInfo> states = new HashMap<>() {
+    public static final int minWorkSessionsBeforeLongBreak = 1;
+    public static final int maxWorkSessionsBeforeLongBreak = 30;
+
+    private final Map<SessionState, StateInfo> states = new HashMap<>() {
         {
-            put(SessionState.WORK, new StateInfo(25, Color.BLUE, "https://img.jakpost.net/c/2020/03/01/2020_03_01_87874_1583031914.jpg"));
-            put(SessionState.BREAK, new StateInfo(10, Color.CYAN, "https://img.webmd.com/dtmcms/live/webmd/consumer_assets/site_images/article_thumbnails/slideshows/stretches_to_help_you_get_loose_slideshow/1800x1200_stretches_to_help_you_get_loose_slideshow.jpg"));
-            put(SessionState.LONG_BREAK, new StateInfo(null, Color.CYAN, "https://miro.medium.com/max/10000/1*BbmQbf-ZHVIgBaoUVShq6g.jpeg"));
-            put(SessionState.NOT_STARTED, new StateInfo(null,  Color.ORANGE, "https://wp-media.labs.com/wp-content/uploads/2019/01/01140607/How-to-De-Clutter-Your-Workspace1.jpg"));
-            put(SessionState.PAUSED, new StateInfo(null,  Color.ORANGE, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-zcKdGFYy2oPkxzqj0lXhGYDyLofR-c083Q&usqp=CAU"));
-            put(SessionState.FINISHED, new StateInfo(null, null, "https://static01.nyt.com/images/2015/11/03/health/well_lyingdown/well_lyingdown-tmagArticle.jpg"));
+            put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, "https://img.jakpost.net/c/2020/03/01/2020_03_01_87874_1583031914.jpg"));
+            put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, "https://img.webmd.com/dtmcms/live/webmd/consumer_assets/site_images/article_thumbnails/slideshows/stretches_to_help_you_get_loose_slideshow/1800x1200_stretches_to_help_you_get_loose_slideshow.jpg"));
+            put(SessionState.LONG_BREAK, new StateInfo(SessionState.LONG_BREAK, null, Color.CYAN, "https://miro.medium.com/max/10000/1*BbmQbf-ZHVIgBaoUVShq6g.jpeg"));
+            put(SessionState.NOT_STARTED, new StateInfo(SessionState.NOT_STARTED, null, Color.ORANGE, "https://wp-media.labs.com/wp-content/uploads/2019/01/01140607/How-to-De-Clutter-Your-Workspace1.jpg"));
+            put(SessionState.PAUSED, new StateInfo(SessionState.PAUSED, null, Color.ORANGE, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-zcKdGFYy2oPkxzqj0lXhGYDyLofR-c083Q&usqp=CAU"));
+            put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, "https://static01.nyt.com/images/2015/11/03/health/well_lyingdown/well_lyingdown-tmagArticle.jpg"));
         }
     };
 
+    /**
+     * Presence in the map indicates the setting is on
+     */
     private Set<BooleanSetting> booleanSettings = new HashSet<>() {
         {
             add(BooleanSetting.PINGS);
@@ -33,62 +49,77 @@ public class PomodoroSettings {
             add(BooleanSetting.DELETE);
         }
     };
+    /**
+     * This setting also dictates whether the long break function will be used
+     */
     private Integer workSessionsBeforeLongBreak = null;
+    /**
+     * For the non-active states, the pomodoro session will be cancelled after this amount of inactivity
+     */
     private int timeoutDuration = 60;
     private Set<String> bannedMembers = new HashSet<>();
-    // member.hasPermission(Permission.MANAGE_SERVER, Permission.ADMINISTRATOR, Permission.MANAGE_CHANNEL);
+    // TODO member.hasPermission(Permission.MANAGE_SERVER, Permission.ADMINISTRATOR, Permission.MANAGE_CHANNEL);
     private Set<Permission> adminPermissions = new HashSet<>();
 
+    public PomodoroSettings() {
+    }
+
+    /**
+     * Store information which the clan can change about each state
+     */
     private class StateInfo {
-        Integer duration = null;
+        private final SessionState state;
+        private Integer duration = null;
         Color colour = null;
         String thumbnail = null;
 
-        public StateInfo() {
+        public StateInfo(SessionState state) {
+            this.state = state;
         }
 
-        public StateInfo(Integer duration, Color colour, String thumbnail) {
+        public StateInfo(SessionState state, Integer duration, Color colour, String thumbnail) {
+            this.state = state;
             this.duration = duration;
             this.colour = colour;
             this.thumbnail = thumbnail;
         }
+
+        /**
+         * @throws BadStateException if state type is not active or for null values being assigned to WORK or BREAK states
+         */
+        public void setDuration(Integer duration) {
+            if (!state.isActiveState) {
+                throw new BadStateException("Suspended states cannot have a duration");
+            }
+            if (duration == null && (state == SessionState.WORK || state == SessionState.BREAK)) {
+                throw new BadStateException("Cannot have a null duration on work or break");
+            }
+            checkDuration(duration);
+            this.duration = duration;
+        }
     }
 
-    public void addStateInfo(SessionState state, @Nullable Color color, @Nullable String thumbnail, @Nullable Integer duration) {
-        StateInfo info = getInfo(state);
+    public void setStateInfo(SessionState state, @Nullable Color color, @Nullable String thumbnail, @Nullable Integer duration) {
+        final StateInfo info;
+        if (states.containsKey(state)) {
+            info = states.get(state);
+        } else {
+            info = new StateInfo(state);
+        }
+
         if (color != null) {
             info.colour = color;
         }
         if (thumbnail != null) {
             info.thumbnail = thumbnail;
         }
-        if (duration != null && state.isStarted) {
-            info.duration = duration;
-        }
-    }
-
-    public void setStateDuration(SessionState state, Integer duration) {
-        if (duration == null && (state == SessionState.WORK || state == SessionState.BREAK)) {
-            throw new BadUserInputException("Cannot have a null duration on work or break");
-        }
-        StateInfo info = getInfo(state);
-        info.duration = duration;
-    }
-
-    private StateInfo getInfo(SessionState state) {
-        if (states.containsKey(state)) {
-            return states.get(state);
-        } else {
-            return new StateInfo();
+        if (duration != null) {
+            info.setDuration(duration);
         }
     }
 
     public void setBooleanSettings(Set<BooleanSetting> booleanSettings) {
         this.booleanSettings = booleanSettings;
-    }
-
-    public void setWorkSessionsBeforeLongBreak(Integer workSessionsBeforeLongBreak) {
-        this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
     }
 
     public void setTimeoutDuration(int timeoutDuration) {
@@ -103,6 +134,11 @@ public class PomodoroSettings {
         this.adminPermissions = adminPermissions;
     }
 
+    /**
+     * Check that non-null durations come between the {@link #maxDuration} and {@link #minDuration}
+     *
+     * @throws BadUserInputException if outside of bounds
+     */
     public void checkDuration(Integer duration) {
         if (duration == null) {
             return;
@@ -115,103 +151,112 @@ public class PomodoroSettings {
         }
     }
 
+    /**
+     * Will only set properties after validating the input
+     *
+     * @param args {@link PomodoroCommand#getArgumentFormat()}
+     * @throws BadUserInputException
+     * @throws BadStateException
+     */
     public void setFromArgs(String args) {
-        Map<BooleanSetting, Boolean> booleanSettings = null;
         if (args.isEmpty()) {
             return;
         }
-        List<Integer> argsInts = new ArrayList<>();
+        final Map<BooleanSetting, Boolean> booleanSettings = new HashMap<>();
+        final List<Integer> numericArguments = new ArrayList<>();
+        boolean intArgsEnd = false;
         for (String arg : args.split(" ")) {
-            try {
-                argsInts.add(Integer.parseInt(arg));
-            } catch (NumberFormatException ignored) {
+            /*
+             * Numerical arguments come first
+             */
+            if (!intArgsEnd) {
+                try {
+                    int parsedInt = Integer.parseInt(arg);
+                    // First 3 arguments are durations
+                    if (numericArguments.size() < 3) {
+                        checkDuration(parsedInt);
+                    } else if (numericArguments.size() >= 4) {
+                        throw new BadUserInputException("Arguments incorrect - too many numerical arguments");
+                    }
+                    numericArguments.add(parsedInt);
+                } catch (NumberFormatException ignored) {
+                    // End of numerical arguments
+                    intArgsEnd = true;
+                }
+            }
+            /*
+             * Boolean settings come afterwards
+             */
+            if (intArgsEnd) {
                 String[] currentArg = arg.split(":");
                 if (currentArg.length != 2 || (!currentArg[1].equalsIgnoreCase("on") && !currentArg[1].equalsIgnoreCase("off"))) {
                     throw new BadUserInputException("Non-numerical arguments must be in the format 'ping:on' or 'ping:off'");
                 }
-                BooleanSetting setting;
                 try {
-                    setting = BooleanSetting.valueOf(currentArg[0].toUpperCase());
+                    BooleanSetting setting = BooleanSetting.valueOf(currentArg[0].toUpperCase());
+                    booleanSettings.put(setting, currentArg[1].equalsIgnoreCase("on"));
                 } catch (IllegalArgumentException e) {
                     throw new BadUserInputException("Unknown setting: " + currentArg[0]);
                 }
-                if (booleanSettings == null) {
-                    booleanSettings = new HashMap<>();
-                }
-                booleanSettings.put(setting, currentArg[1].equalsIgnoreCase("on"));
             }
-        }
-        if (argsInts.size() > 4) {
-            throw new BadUserInputException("Arguments incorrect - too many numerical arguments");
-        }
-        Integer workDuration = null;
-        Integer breakDuration = null;
-        Integer longBreakDuration = null;
-        Integer sessionsBeforeLongBreakDuration = null;
-        if (argsInts.size() > 0) {
-            workDuration = argsInts.get(0);
-            checkDuration(workDuration);
-        }
-        if (argsInts.size() > 1) {
-            breakDuration = argsInts.get(1);
-            checkDuration(breakDuration);
-        }
-        if (argsInts.size() > 2) {
-            longBreakDuration = argsInts.get(2);
-            checkDuration(longBreakDuration);
-        }
-        if (argsInts.size() > 3) {
-            sessionsBeforeLongBreakDuration = argsInts.get(3);
         }
 
         /*
          * Set settings
          */
-        setLongBreak(longBreakDuration, sessionsBeforeLongBreakDuration);
-        if (workDuration != null) {
-            this.states.get(SessionState.WORK).duration = workDuration;
+        // Long break first as this will validate it (all others were validated in the parse loop)
+        if (numericArguments.size() > 2) {
+            setLongBreak(numericArguments.get(2), numericArguments.size() > 3 ? numericArguments.get(3) : null);
         }
-        if (breakDuration != null) {
-            this.states.get(SessionState.BREAK).duration = breakDuration;
+        if (numericArguments.size() > 1) {
+            this.states.get(SessionState.BREAK).setDuration(numericArguments.get(1));
         }
-        if (booleanSettings != null) {
-            setBooleanSettings(booleanSettings);
+        if (numericArguments.size() > 0) {
+            this.states.get(SessionState.WORK).setDuration(numericArguments.get(0));
         }
-    }
-
-    public void setBooleanSetting(BooleanSetting setting, boolean value) {
-        if (value) {
-            this.booleanSettings.add(setting);
-        }
-        else {
-            this.booleanSettings.remove(setting);
-        }
-    }
-
-    public void setBooleanSettings(Map<BooleanSetting, Boolean> settings) {
-        for (Map.Entry<BooleanSetting, Boolean> setting : settings.entrySet()) {
-            setBooleanSetting(setting.getKey(), setting.getValue());
+        for (Map.Entry<BooleanSetting, Boolean> setting : booleanSettings.entrySet()) {
+            if (setting.getValue()) {
+                this.booleanSettings.add(setting.getKey());
+            } else {
+                this.booleanSettings.remove(setting.getKey());
+            }
         }
     }
 
     public void setLongBreak(Integer workSessionsBeforeLongBreak, Integer longBreakDuration) {
-        if (workSessionsBeforeLongBreak != null && longBreakDuration == null
-                || workSessionsBeforeLongBreak == null && longBreakDuration != null) {
+        if (workSessionsBeforeLongBreak == null && longBreakDuration == null) {
+            this.workSessionsBeforeLongBreak = null;
+            this.states.get(SessionState.LONG_BREAK).setDuration(null);
+        }
+
+        if (workSessionsBeforeLongBreak == null || longBreakDuration == null) {
             throw new BadUserInputException("Must provide long break duration AND work sessions until long break (or neither)");
         }
-        if (workSessionsBeforeLongBreak != null) {
-            int min = 1;
-            if (workSessionsBeforeLongBreak < min) {
-                throw new BadUserInputException("Minimum " + min + " work session before long break");
-            }
-            int max = 30;
-            if (workSessionsBeforeLongBreak > max) {
-                throw new BadUserInputException("Maximum " + max + " work session before long break");
-            }
+        if (workSessionsBeforeLongBreak < minWorkSessionsBeforeLongBreak) {
+            throw new BadUserInputException("Minimum " + minWorkSessionsBeforeLongBreak + " work session before long break");
+        }
+        if (workSessionsBeforeLongBreak > maxWorkSessionsBeforeLongBreak) {
+            throw new BadUserInputException("Maximum " + maxWorkSessionsBeforeLongBreak + " work session before long break");
         }
         checkDuration(longBreakDuration);
         this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
-        this.states.get(SessionState.LONG_BREAK).duration = longBreakDuration;
+        this.states.get(SessionState.LONG_BREAK).setDuration(longBreakDuration);
+    }
+
+    /**
+     * 0 durations will be set to null
+     *
+     * @throws BadStateException if workSessionsBeforeLongBreak is < 0
+     */
+    public void setWorkSessionsBeforeLongBreak(Integer workSessionsBeforeLongBreak) {
+        if (workSessionsBeforeLongBreak != null) {
+            if (workSessionsBeforeLongBreak == 0) {
+                workSessionsBeforeLongBreak = null;
+            } else if (workSessionsBeforeLongBreak < 0) {
+                throw new BadStateException("Must have at least 1 work session before a break (0 to unset)");
+            }
+        }
+        this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
     }
 
     public boolean hasSetting(BooleanSetting setting) {
@@ -223,7 +268,7 @@ public class PomodoroSettings {
     }
 
     public Integer getStateDuration(SessionState state) {
-        if (!state.isStarted) {
+        if (!state.isActiveState) {
             return timeoutDuration;
         }
         return states.get(state).duration;

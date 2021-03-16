@@ -47,7 +47,7 @@ public enum DatabaseEntry implements DatabaseEntryType {
                         if (object.has("duration")) {
                             duration = object.get("duration").getAsInt();
                         }
-                        pgi.addStateInfo(state, color, thumbnail, duration);
+                        pgi.setStateInfo(state, color, thumbnail, duration);
                     }
                 }
                 /*

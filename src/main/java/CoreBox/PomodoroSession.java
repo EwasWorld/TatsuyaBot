@@ -139,7 +139,7 @@ public class PomodoroSession {
         if (sessionState == SessionState.PAUSED) {
             return "Session is paused. Resume to continue " + resumeState.stateGeneral;
         }
-        if (!sessionState.isStarted) {
+        if (!sessionState.isActiveState) {
             return "Timer not started";
         }
         String string = "";
@@ -218,11 +218,11 @@ public class PomodoroSession {
 
     public void update(Instant currentTime, boolean forceNextState) {
         if ((nextPing != null && nextPing.isBefore(currentTime)) || forceNextState) {
-            if (forceNextState && !sessionState.isStarted) {
+            if (forceNextState && !sessionState.isActiveState) {
                 throw new BadUserInputException("Session is currently suspended, try starting it first");
             }
             SessionState nextState;
-            if (!sessionState.isStarted) {
+            if (!sessionState.isActiveState) {
                 nextState = SessionState.FINISHED;
             }
             else {
@@ -264,7 +264,7 @@ public class PomodoroSession {
         /*
          * Update states
          */
-        if (sessionState.isStarted && updateResumeState) {
+        if (sessionState.isActiveState && updateResumeState) {
             resumeState = sessionState;
         }
         sessionState = nextState;
@@ -272,7 +272,7 @@ public class PomodoroSession {
         /*
          * Update messages and send pings
          */
-        if (sessionState.isStarted || !updateResumeState) {
+        if (sessionState.isActiveState || !updateResumeState) {
             Message oldPingMessage = pingMessage;
             channel.sendMessage(buildPingString()).queue(createdMessage -> pingMessage = createdMessage);
             Message oldMainMessage = mainMessage;
@@ -331,7 +331,7 @@ public class PomodoroSession {
         if (sessionState == SessionState.NOT_STARTED) {
             throw new BadUserInputException("Session not started");
         }
-        if (!sessionState.isStarted) {
+        if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is already suspended");
         }
         update(SessionState.PAUSED, currentTime);
@@ -359,7 +359,7 @@ public class PomodoroSession {
             if (sessionState == SessionState.NOT_STARTED) {
                 throw new BadUserInputException("Session not started");
             }
-            if (sessionState.isStarted) {
+            if (sessionState.isActiveState) {
                 throw new BadStateException("Uh oh, someone forgot to set the timer, bad Tatsuya");
             }
             throw new BadUserInputException("Session is currently suspended");
@@ -368,7 +368,7 @@ public class PomodoroSession {
     }
 
     public void resetTime(Instant currentTime) {
-        if (!sessionState.isStarted) {
+        if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
 
@@ -379,7 +379,7 @@ public class PomodoroSession {
     }
 
     public void addTime(int minutes, Instant currentTime) {
-        if (!sessionState.isStarted) {
+        if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
         if (minutes <= 0) {
@@ -393,7 +393,7 @@ public class PomodoroSession {
     }
 
     public void removeTime(int minutes, Instant currentTime) {
-        if (!sessionState.isStarted) {
+        if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
         if (minutes <= 0) {
@@ -404,7 +404,7 @@ public class PomodoroSession {
         }
         int timeDiff = minutesBetweenTwoTimes(currentTime, nextPing);
         if (timeDiff < minutes + 1) {
-            throw new BadUserInputException("There's only " + minutesToTimeString(timeDiff) + " left!");
+            throw new BadUserInputException("There's only " + minutesToTimeString(timeDiff) + " left! Can't lower it by " + minutes + " minutes!");
         }
         nextPing = nextPing.minus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);
@@ -432,14 +432,14 @@ public class PomodoroSession {
         String stateGeneral;
         Color defaultColour;
         String defaultThumbnail;
-        boolean isStarted;
+        boolean isActiveState;
 
-        SessionState(String stateTitle, String stateGeneral, boolean isStarted, Color defaultColour, String defaultThumbnail) {
+        SessionState(String stateTitle, String stateGeneral, boolean isActiveState, Color defaultColour, String defaultThumbnail) {
             this.stateTitle = stateTitle;
             this.stateGeneral = stateGeneral;
             this.defaultColour = defaultColour;
             this.defaultThumbnail = defaultThumbnail;
-            this.isStarted = isStarted;
+            this.isActiveState = isActiveState;
         }
     }
 
@@ -494,7 +494,7 @@ public class PomodoroSession {
 
         private int getNextStateDuration(SessionState nextState) {
             int timeRemaining = settings.getStateDuration(nextState);
-            if (!nextState.isStarted) {
+            if (!nextState.isActiveState) {
                 return timeRemaining;
             }
             for (int i = completedItems.size() - 1; i >= 0; i--) {
@@ -503,7 +503,7 @@ public class PomodoroSession {
                     timeRemaining -= item.time;
                     continue;
                 }
-                if (!item.state.isStarted) {
+                if (!item.state.isActiveState) {
                     continue;
                 }
                 break;

@@ -188,7 +188,11 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                 throw new BadStateException("Unexpected emoji reaction, someone's messed up...");
             }
         }
-        command.emojiExecute(session, event.getMember());
+        try {
+            command.emojiExecute(session, event.getMember());
+        } catch (BadUserInputException e) {
+            event.getChannel().sendMessage(e.getMessage()).queue();
+        }
         if (command.removeEmoji()) {
             session.removeEmoji(event.getReactionEmote().getEmoji(), event.getUser());
         }
@@ -249,6 +253,10 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             emojis.add(command.getEmoji());
         }
         return emojis;
+    }
+
+    public String getArgumentFormat() {
+        return PomodoroSecondaryCommands.NEW.getArguments();
     }
 
     private enum PomodoroSecondaryCommands implements CommandInterface {
