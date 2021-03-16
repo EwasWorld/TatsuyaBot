@@ -19,6 +19,9 @@ import java.util.concurrent.TimeUnit;
 
 import static BotFrameworkBox.Bot.commandPrefix;
 
+/**
+ * Information about an active pomodoro session
+ */
 public class PomodoroSession {
     /*
      * Session Settings
@@ -26,7 +29,7 @@ public class PomodoroSession {
     /**
      * Maps participants who wish to be pinged to a message of what they're doing
      */
-    private final ParticipantInfo participantInfo = new ParticipantInfo();
+    private final Participants participants = new Participants();
     private final PomodoroSettings settings = new PomodoroSettings();
 
     /*
@@ -37,7 +40,7 @@ public class PomodoroSession {
     private Instant timeSessionStarted = null;
 
     /*
-     * State information
+     * Current state information
      */
     private Instant timeCurrentStateStarted = null;
     private SessionState sessionState = SessionState.NOT_STARTED;
@@ -45,8 +48,14 @@ public class PomodoroSession {
      * If the current state is 'paused', resume to this state
      */
     private SessionState resumeState = null;
-    private Instant nextPing = null;
+    private Instant timeCurrentStateEnds = null;
+    /**
+     * The message containing the current timer info
+     */
     private Message mainMessage = null;
+    /**
+     * The last ping message (kept so that it can be deleted next time a ping message is sent)
+     */
     private Message pingMessage = null;
     private final HistoricStateData historicStateData = new HistoricStateData();
 
@@ -54,19 +63,11 @@ public class PomodoroSession {
         this.author = author;
         this.channel = channel;
         settings.setFromArgs(args);
-        addParticipant(author, true);
+        participants.addParticipant(author, true);
         channel.sendMessage(buildEmbed(currentTime)).queue(createdMessage -> {
             mainMessage = createdMessage;
             updateMessageEmojis();
         });
-    }
-
-    public void addParticipant(Member participant, boolean ping, String studying) {
-        participantInfo.addParticipant(participant, ping, studying);
-    }
-
-    public void addParticipant(Member participant, boolean ping) {
-        participantInfo.addParticipant(participant, ping);
     }
 
     public void setMessage(Message message) {
@@ -89,10 +90,13 @@ public class PomodoroSession {
         return settings;
     }
 
-    public void removeParticipant(Member participant) {
-        participantInfo.removeParticipant(participant);
+    public Participants getParticipants() {
+        return participants;
     }
 
+    /**
+     * @return the embed that will act as the {@link #mainMessage}
+     */
     public MessageEmbed buildEmbed(Instant timeNow) {
         int timeInCurrentState = 0;
         if (timeCurrentStateStarted != null) {
@@ -100,24 +104,25 @@ public class PomodoroSession {
         }
         EmbedBuilder embedBuilder = new EmbedBuilder();
         embedBuilder.setTitle(String.format("Pomodoro Timer - %s", sessionState.stateTitle));
-        embedBuilder.setDescription(currentCycleInfoString(timeNow));
-        embedBuilder.addField("Ping party" + (!settings.hasSetting(BooleanSetting.PINGS) ? " (off)" : ""), participantInfo.getMemberList(), true);
-        embedBuilder.addField("People are working on", participantInfo.getWorkingOnList(), true);
+        embedBuilder.setDescription(getCurrentStateString(timeNow));
+        embedBuilder.addField("Ping party" + (!settings.getBooleanSetting(BooleanSetting.PINGS) ? " (off)" : ""), participants.getParticipantList(), true);
+        embedBuilder.addField("People are working on", participants.getWorkingOnList(), true);
+        // Blank field to fill last column (inline fields are in a 3-wide grid)
         embedBuilder.addField("", "", true);
-        embedBuilder.addField("Completed Stats", getSessionStartedTime() + "\n" + historicStateData.getCompletedStatsString(timeInCurrentState, sessionState), true);
+        embedBuilder.addField("Completed Stats", getSessionStartTimeString() + "\n" + historicStateData.getCompletedStatsString(timeInCurrentState, sessionState), true);
         embedBuilder.addField("Session Settings", getSessionSettingsString(true), true);
         embedBuilder.setFooter(String.format("%shelp", commandPrefix));
         if (sessionState.defaultColour != null) {
             embedBuilder.setColor(sessionState.defaultColour);
         }
-        if (sessionState.defaultThumbnail != null && settings.hasSetting(BooleanSetting.IMAGES)) {
-            embedBuilder.setImage(sessionState.defaultThumbnail);
+        if (sessionState.defaultImage != null && settings.getBooleanSetting(BooleanSetting.IMAGES)) {
+            embedBuilder.setImage(settings.getStateImage(sessionState));
         }
         return embedBuilder.build();
     }
 
-    private String getSessionStartedTime() {
-        DateTimeFormatter sdf = DateTimeFormatter.ofPattern((settings.hasSetting(BooleanSetting.DATE) ? "yy/MM/dd " : "") +"HH:mm z");
+    private String getSessionStartTimeString() {
+        DateTimeFormatter sdf = DateTimeFormatter.ofPattern((settings.getBooleanSetting(BooleanSetting.DATE) ? "yy/MM/dd " : "") + "HH:mm z");
         String string = "Started: ";
         if (timeSessionStarted == null) {
             return string + "--:--";
@@ -126,6 +131,9 @@ public class PomodoroSession {
     }
 
     private int minutesBetweenTwoTimes(Instant timeA, Instant timeB) {
+        if (timeA == null || timeB == null) {
+            throw new BadStateException("Instant cannot be null");
+        }
         long milliDifference = Math.abs(timeA.toEpochMilli() - timeB.toEpochMilli());
         long conversion = TimeUnit.MILLISECONDS.convert(1, TimeUnit.MINUTES);
         double diff = Math.ceil((double) milliDifference / conversion);
@@ -135,65 +143,99 @@ public class PomodoroSession {
         return (int) diff;
     }
 
-    private String currentCycleInfoString(Instant timeNow) {
+    /**
+     * @return information about the current session state and, if appropriate, when the next state will begin
+     */
+    private String getCurrentStateString(Instant timeNow) {
         if (sessionState == SessionState.PAUSED) {
-            return "Session is paused. Resume to continue " + resumeState.stateGeneral;
+            return "Session is paused. Resume to continue " + resumeState.stateDisplayTitle;
         }
-        if (!sessionState.isActiveState) {
+        if (sessionState == SessionState.FINISHED) {
+            return "Session completed";
+        }
+        if (sessionState == SessionState.NOT_STARTED) {
             return "Timer not started";
         }
-        String string = "";
-        SessionState nextState = getNextState();
-        string += String.format("%s until %s", minutesToTimeString(minutesBetweenTwoTimes(nextPing, timeNow)), nextState.stateGeneral);
-        Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
-        if (workSessionsBeforeLongBreak != null && nextState != SessionState.LONG_BREAK) {
-            string += String.format("\n%d work sessions until long break (not including this one)", workSessionsBeforeLongBreak - historicStateData.workSessionsSinceLastLongBreak() - 1);
+        if (!sessionState.isActiveState) {
+            return "Session is currently suspended";
         }
-        return string;
+
+        SessionState nextState = getNextState();
+        Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
+        String returnString = String.format("%s until %s", minutesToDisplayString(minutesBetweenTwoTimes(timeCurrentStateEnds, timeNow)), nextState.stateDisplayTitle);
+        if (workSessionsBeforeLongBreak != null && nextState != SessionState.LONG_BREAK) {
+            returnString += String.format("\n%d work sessions until long break (not including this one)", workSessionsBeforeLongBreak - historicStateData.countWorkSessions(true) - 1);
+        }
+        return returnString;
     }
 
+    /**
+     * @param shortVersion whether to show boolean settings or not
+     * @return string displaying timings, author, and boolean settings
+     */
     public String getSessionSettingsString(boolean shortVersion) {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("Work: %s, Break: %s", minutesToTimeString(settings.getStateDuration(SessionState.WORK)), minutesToTimeString(settings.getStateDuration(SessionState.WORK))));
+        /*
+         * Timings
+         */
+        sb.append(String.format("Work: %s, Break: %s", minutesToDisplayString(settings.getStateDuration(SessionState.WORK)), minutesToDisplayString(settings.getStateDuration(SessionState.WORK))));
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         if (workSessionsBeforeLongBreak != null) {
-            sb.append(String.format("\nWork sessions before long break: %d, Long break: %s", workSessionsBeforeLongBreak, minutesToTimeString(settings.getStateDuration(SessionState.LONG_BREAK))));
+            sb.append(String.format("\nWork sessions before long break: %d, Long break: %s", workSessionsBeforeLongBreak, minutesToDisplayString(settings.getStateDuration(SessionState.LONG_BREAK))));
         }
         else {
             sb.append("\nLong break not set");
         }
+
+        /*
+         * Author
+         */
         sb.append("\nSession created by: ").append(author.getEffectiveName());
+
         if (!shortVersion) {
+            /*
+             * Boolean settings (strike through settings that are off)
+             */
             sb.append("\n");
             boolean firstSetting = true;
             for (BooleanSetting setting : BooleanSetting.values()) {
                 String formatting = "";
-                if (!settings.hasSetting(setting)) {
+                if (!settings.getBooleanSetting(setting)) {
                     formatting = "~~";
                 }
                 if (!firstSetting) {
                     sb.append("・");
-                } else {
+                }
+                else {
                     firstSetting = false;
                 }
-                sb.append(formatting).append(setting.message).append(formatting);
+                sb.append(formatting).append(setting.displayMessage).append(formatting);
             }
         }
         return sb.toString();
     }
 
+    /**
+     * @return work, break, or long break
+     */
     private SessionState getNextState() {
         if (sessionState != SessionState.WORK) {
             return SessionState.WORK;
         }
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
-        if (workSessionsBeforeLongBreak != null && historicStateData.workSessionsSinceLastLongBreak() + 1 >= workSessionsBeforeLongBreak) {
+        if (workSessionsBeforeLongBreak != null && historicStateData.countWorkSessions(true) + 1 >= workSessionsBeforeLongBreak) {
             return SessionState.LONG_BREAK;
         }
         return SessionState.BREAK;
     }
 
-    public static String minutesToTimeString(int minutes) {
+    /**
+     * @return "2 hours 3 mins", pluralising as necessary and omitting hours if not required
+     */
+    public static String minutesToDisplayString(int minutes) {
+        if (minutes < 0) {
+            throw new BadStateException("Cannot display a time of less than 0 minutes");
+        }
         if (minutes == 0) {
             return "0 mins";
         }
@@ -205,36 +247,45 @@ public class PomodoroSession {
         StringBuilder sb = new StringBuilder();
         if (hours == 1) {
             sb.append("1 hour ");
-        } else if (hours > 1) {
+        }
+        else if (hours > 1) {
             sb.append(String.format("%d hours ", hours));
         }
         if (minutes == 1) {
             sb.append("1 min");
-        } else if (minutes > 1) {
+        }
+        else if (minutes > 1) {
             sb.append(String.format("%d mins", minutes));
         }
         return sb.toString();
     }
 
+    /**
+     * Refreshes the {@link #mainMessage}, moving to the next state if the appropriate time has elapsed
+     *
+     * @param forceNextState forcefully move to the next state whether the appropriate time has elapsed or not
+     * @throws BadUserInputException if session is suspended and forceNextState is true
+     */
     public void update(Instant currentTime, boolean forceNextState) {
-        if ((nextPing != null && nextPing.isBefore(currentTime)) || forceNextState) {
+        if (forceNextState || (timeCurrentStateEnds != null && timeCurrentStateEnds.isBefore(currentTime))) {
             if (forceNextState && !sessionState.isActiveState) {
                 throw new BadUserInputException("Session is currently suspended, try starting it first");
             }
             SessionState nextState;
             if (!sessionState.isActiveState) {
+                // Time out
                 nextState = SessionState.FINISHED;
             }
             else {
                 nextState = getNextState();
             }
-            boolean updateResumeState = true;
-            if (!settings.hasSetting(BooleanSetting.AUTO) && !forceNextState) {
+            boolean forceSendPings = false;
+            if (!settings.getBooleanSetting(BooleanSetting.AUTO) && !forceNextState) {
                 resumeState = nextState;
                 nextState = SessionState.PAUSED;
-                updateResumeState = false;
+                forceSendPings = true;
             }
-            update(nextState, currentTime, updateResumeState);
+            update(nextState, currentTime, forceSendPings);
         }
         else if (mainMessage != null) {
             mainMessage.editMessage(buildEmbed(currentTime)).queue();
@@ -249,13 +300,15 @@ public class PomodoroSession {
     }
 
     /**
-     * Update the current state and update the message
+     * Update the current state, update the message, ping if moving to an active state
+     *
+     * @param forceSendPings ping even if not moving to an active state
      */
-    private void update(SessionState nextState, Instant currentTime, boolean updateResumeState) {
+    private void update(SessionState nextState, Instant currentTime, boolean forceSendPings) {
         /*
          * Update times
          */
-        nextPing = currentTime.plus(historicStateData.getNextStateDuration(nextState), ChronoUnit.MINUTES);
+        timeCurrentStateEnds = currentTime.plus(historicStateData.getNextStateDurationAdjusted(nextState), ChronoUnit.MINUTES);
         if (timeCurrentStateStarted != null) {
             historicStateData.addCompletedItem(minutesBetweenTwoTimes(timeCurrentStateStarted, currentTime), sessionState);
         }
@@ -264,7 +317,7 @@ public class PomodoroSession {
         /*
          * Update states
          */
-        if (sessionState.isActiveState && updateResumeState) {
+        if (sessionState.isActiveState) {
             resumeState = sessionState;
         }
         sessionState = nextState;
@@ -272,15 +325,35 @@ public class PomodoroSession {
         /*
          * Update messages and send pings
          */
-        if (sessionState.isActiveState || !updateResumeState) {
+        if (sessionState.isActiveState || forceSendPings) {
+            /*
+             * Build messages
+             */
+            StringBuilder pingString = new StringBuilder(":clap: *Bangs Pots* :clap:");
+            if (settings.getBooleanSetting(BooleanSetting.PINGS)) {
+                String mentionString = participants.getMentionList();
+                if (mentionString != null && !mentionString.isBlank()) {
+                    pingString.append("\n");
+                    pingString.append(mentionString);
+                }
+            }
+            pingString.append(String.format("\nIt's %s time!", sessionState.stateDisplayTitle));
+
+            /*
+             * Send messages
+             */
             Message oldPingMessage = pingMessage;
-            channel.sendMessage(buildPingString()).queue(createdMessage -> pingMessage = createdMessage);
+            channel.sendMessage(pingString.toString()).queue(createdMessage -> pingMessage = createdMessage);
             Message oldMainMessage = mainMessage;
             channel.sendMessage(buildEmbed(currentTime)).queue(createdMessage -> {
                 mainMessage = createdMessage;
                 updateMessageEmojis();
             });
-            if (settings.hasSetting(BooleanSetting.DELETE)) {
+
+            /*
+             * Clean up
+             */
+            if (settings.getBooleanSetting(BooleanSetting.DELETE)) {
                 if (oldMainMessage != null) {
                     oldMainMessage.delete().queue();
                 }
@@ -288,9 +361,8 @@ public class PomodoroSession {
                     oldPingMessage.delete().queue();
                 }
             }
-            return;
         }
-        if (mainMessage != null) {
+        else if (mainMessage != null) {
             mainMessage.editMessage(buildEmbed(currentTime)).queue(message -> updateMessageEmojis());
         }
     }
@@ -306,20 +378,10 @@ public class PomodoroSession {
         mainMessage.removeReaction(emote, user).queue();
     }
 
-    private String buildPingString() {
-        StringBuilder sb = new StringBuilder(":clap: *Bangs Pots* :clap:");
-        if (settings.hasSetting(BooleanSetting.PINGS)) {
-            String mentionString = participantInfo.getMentionString();
-            if (mentionString != null && !mentionString.isBlank()) {
-                sb.append("\n");
-                sb.append(mentionString);
-            }
-        }
-        sb.append(String.format("\nIt's %s time!", sessionState.stateGeneral));
-        return sb.toString();
-    }
-
-    public void startSession(Instant currentTime) {
+    /**
+     * Action triggered by user
+     */
+    public void userStartSession(Instant currentTime) {
         if (sessionState != SessionState.NOT_STARTED) {
             throw new BadUserInputException("Session is already started");
         }
@@ -327,7 +389,10 @@ public class PomodoroSession {
         update(SessionState.WORK, currentTime);
     }
 
-    public void pauseSession(Instant currentTime) {
+    /**
+     * Action triggered by user
+     */
+    public void userPauseSession(Instant currentTime) {
         if (sessionState == SessionState.NOT_STARTED) {
             throw new BadUserInputException("Session not started");
         }
@@ -337,7 +402,10 @@ public class PomodoroSession {
         update(SessionState.PAUSED, currentTime);
     }
 
-    public void resumeSession(Instant currentTime) {
+    /**
+     * Action triggered by user
+     */
+    public void userResumeSession(Instant currentTime) {
         if (sessionState != SessionState.PAUSED) {
             throw new BadUserInputException("Session isn't paused so cannot resume");
         }
@@ -347,7 +415,10 @@ public class PomodoroSession {
         update(resumeState, currentTime);
     }
 
-    public void stopSession(Instant currentTime) {
+    /**
+     * Action triggered by user
+     */
+    public void userStopSession(Instant currentTime) {
         if (sessionState == SessionState.FINISHED) {
             throw new BadUserInputException("Session is already stopped");
         }
@@ -355,7 +426,7 @@ public class PomodoroSession {
     }
 
     public String getCurrentStateTimeLeftAsString(Instant currentTime) {
-        if (nextPing == null) {
+        if (timeCurrentStateEnds == null) {
             if (sessionState == SessionState.NOT_STARTED) {
                 throw new BadUserInputException("Session not started");
             }
@@ -364,59 +435,64 @@ public class PomodoroSession {
             }
             throw new BadUserInputException("Session is currently suspended");
         }
-        return minutesToTimeString(minutesBetweenTwoTimes(currentTime, nextPing)) + " until " + sessionState.stateGeneral;
+        return minutesToDisplayString(minutesBetweenTwoTimes(currentTime, timeCurrentStateEnds)) + " until " + sessionState.stateDisplayTitle;
     }
 
-    public void resetTime(Instant currentTime) {
+    public void resetTimeOnCurrentState(Instant currentTime) {
         if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
 
-        nextPing = currentTime.plus(settings.getStateDuration(sessionState), ChronoUnit.MINUTES);
+        timeCurrentStateEnds = currentTime.plus(settings.getStateDuration(sessionState), ChronoUnit.MINUTES);
         if (mainMessage != null) {
             mainMessage.editMessage(buildEmbed(currentTime)).queue();
         }
     }
 
-    public void addTime(int minutes, Instant currentTime) {
+    public void addTimeToCurrentState(int minutes, Instant currentTime) {
         if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
         if (minutes <= 0) {
             throw new BadUserInputException("Please enter a number of minutes greater than 0");
         }
-        if (minutes >= PomodoroSettings.maxDuration) {
-            throw new BadUserInputException("Please enter a number of minutes less than than " + PomodoroSettings.maxDuration);
+        int timeRemaining = minutesBetweenTwoTimes(currentTime, timeCurrentStateEnds);
+        if (timeRemaining + minutes >= PomodoroSettings.maxDuration) {
+            throw new BadUserInputException("Please enter a number of minutes less than than " + (PomodoroSettings.maxDuration - timeRemaining));
         }
-        nextPing = nextPing.plus(minutes, ChronoUnit.MINUTES);
+        timeCurrentStateEnds = timeCurrentStateEnds.plus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);
     }
 
-    public void removeTime(int minutes, Instant currentTime) {
+    public void removeTimeFromCurrentState(int minutes, Instant currentTime) {
         if (!sessionState.isActiveState) {
             throw new BadUserInputException("Session is currently suspended");
         }
         if (minutes <= 0) {
             throw new BadUserInputException("Please enter a number of minutes greater than 0");
         }
-        if (minutes >= PomodoroSettings.maxDuration) {
-            throw new BadUserInputException("Please enter a number of minutes less than than " + PomodoroSettings.maxDuration);
-        }
-        int timeDiff = minutesBetweenTwoTimes(currentTime, nextPing);
+        int timeDiff = minutesBetweenTwoTimes(currentTime, timeCurrentStateEnds);
         if (timeDiff < minutes + 1) {
-            throw new BadUserInputException("There's only " + minutesToTimeString(timeDiff) + " left! Can't lower it by " + minutes + " minutes!");
+            throw new BadUserInputException("There's only " + minutesToDisplayString(timeDiff) + " left! Can lower it by a maximum of " + minutesToDisplayString(timeDiff - 1));
         }
-        nextPing = nextPing.minus(minutes, ChronoUnit.MINUTES);
+        timeCurrentStateEnds = timeCurrentStateEnds.minus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);
     }
 
+    /**
+     * Settings which can either be on or off
+     */
     public enum BooleanSetting {
         PINGS("(Pings)"), AUTO("(Auto) Continue"), DELETE("(Delete) old messages"), IMAGES("(Images)"), DATE("Show full (date)");
 
-        String message;
+        /**
+         * How this can be displayed. Ideally, the value should be bracketed so the users know what they need to input to get this setting to activate
+         * e.g. AUTO might be displayed as "(Auto) Continue"
+         */
+        String displayMessage;
 
-        BooleanSetting(String message) {
-            this.message = message;
+        BooleanSetting(String displayMessage) {
+            this.displayMessage = displayMessage;
         }
     }
 
@@ -428,22 +504,38 @@ public class PomodoroSession {
         PAUSED("PAUSED", "paused", false, Color.ORANGE, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-zcKdGFYy2oPkxzqj0lXhGYDyLofR-c083Q&usqp=CAU"),
         FINISHED("FINISHED", "finished", false, null, "https://static01.nyt.com/images/2015/11/03/health/well_lyingdown/well_lyingdown-tmagArticle.jpg");
 
+        /**
+         * The message title when this is the state
+         */
         String stateTitle;
-        String stateGeneral;
+        /**
+         * E.g. "The next state is X"
+         */
+        String stateDisplayTitle;
         Color defaultColour;
-        String defaultThumbnail;
+        String defaultImage;
+        /**
+         * Active states are the standard pomodoro states of work/break/long break
+         * Non-active states are suspended states like paused/not started/finished
+         */
         boolean isActiveState;
 
-        SessionState(String stateTitle, String stateGeneral, boolean isActiveState, Color defaultColour, String defaultThumbnail) {
+        SessionState(String stateTitle, String stateDisplayTitle, boolean isActiveState, Color defaultColour, String defaultImage) {
             this.stateTitle = stateTitle;
-            this.stateGeneral = stateGeneral;
+            this.stateDisplayTitle = stateDisplayTitle.toLowerCase();
             this.defaultColour = defaultColour;
-            this.defaultThumbnail = defaultThumbnail;
+            this.defaultImage = defaultImage;
             this.isActiveState = isActiveState;
         }
     }
 
+    /**
+     * Information on previous states and their timings so that information such as total work time can be calculated
+     */
     private class HistoricStateData {
+        /**
+         * Data is added to the end (later items are more recent)
+         */
         private final List<DataItem> completedItems = new ArrayList<>();
 
         void addCompletedItem(int time, SessionState state) {
@@ -453,46 +545,52 @@ public class PomodoroSession {
             completedItems.add(new DataItem(time, state));
         }
 
-        int workSessionsSinceLastLongBreak() {
+        /**
+         * WORK PAUSE WORK counts as 1
+         *
+         * @param countSinceLongBreak false: count all work session, true: work sessions since last long break
+         */
+        int countWorkSessions(boolean countSinceLongBreak) {
+            SessionState lastActiveState = null;
             int count = 0;
             for (int i = completedItems.size() - 1; i >= 0; i--) {
                 DataItem item = completedItems.get(i);
-                if (item.state == SessionState.LONG_BREAK) {
+                if (item.state == SessionState.LONG_BREAK && countSinceLongBreak) {
                     break;
                 }
-                else if (item.state == SessionState.WORK) {
+                else if (item.state == SessionState.WORK && lastActiveState != SessionState.WORK) {
                     count++;
+                }
+                if (item.state.isActiveState) {
+                    lastActiveState = item.state;
                 }
             }
             return count;
         }
 
+        /**
+         * @return a display string of completed work sessions and total study time
+         */
         private String getCompletedStatsString(int timeInCurrentState, SessionState currentState) {
-            int workSessionsCompleted = 0;
             int workTimeElapsed = 0;
-            boolean workSession = false;
             for (DataItem dataItem : completedItems) {
                 if (dataItem.state == SessionState.WORK) {
-                    if (!workSession) {
-                        workSessionsCompleted++;
-                    }
                     workTimeElapsed += dataItem.time;
-                    workSession = true;
-                }
-                else if (dataItem.state == SessionState.BREAK || dataItem.state == SessionState.LONG_BREAK) {
-                    workSession = false;
                 }
             }
             if (currentState == SessionState.WORK) {
                 workTimeElapsed += timeInCurrentState;
             }
 
-            String string = "Completed work sessions: " + workSessionsCompleted;
-            string += "\nTotal study time: " + minutesToTimeString(workTimeElapsed);
-            return string;
+            String returnString = "Completed work sessions: " + countWorkSessions(false);
+            returnString += "\nTotal study time: " + minutesToDisplayString(workTimeElapsed);
+            return returnString;
         }
 
-        private int getNextStateDuration(SessionState nextState) {
+        /**
+         * @return the time the next state should be elapsed for (adjusts if for example a work session was paused and is to be resumed)
+         */
+        private int getNextStateDurationAdjusted(SessionState nextState) {
             int timeRemaining = settings.getStateDuration(nextState);
             if (!nextState.isActiveState) {
                 return timeRemaining;
@@ -522,7 +620,7 @@ public class PomodoroSession {
         }
     }
 
-    private static class ParticipantInfo {
+    public static class Participants {
         private final Map<Member, ParticipantDetail> participants = new HashMap<>();
 
         public void removeParticipant(Member participant) {
@@ -539,11 +637,11 @@ public class PomodoroSession {
 
         private static class ParticipantDetail {
             boolean ping;
-            String message = null;
+            String workingOn = null;
 
-            public ParticipantDetail(boolean ping, String message) {
+            public ParticipantDetail(boolean ping, String workingOn) {
                 this.ping = ping;
-                this.message = message;
+                this.workingOn = workingOn;
             }
 
             public ParticipantDetail(boolean ping) {
@@ -551,7 +649,10 @@ public class PomodoroSession {
             }
         }
 
-        private String getMemberList() {
+        /**
+         * @return a newline-separated list of participants
+         */
+        private String getParticipantList() {
             if (participants.isEmpty()) {
                 return "No one yet";
             }
@@ -569,10 +670,13 @@ public class PomodoroSession {
             return sb.toString();
         }
 
+        /**
+         * @return a newline-separated list of what members are working on
+         */
         private String getWorkingOnList() {
             StringBuilder sb = new StringBuilder();
             for (Map.Entry<Member, ParticipantDetail> entry : participants.entrySet()) {
-                String workingOn = entry.getValue().message;
+                String workingOn = entry.getValue().workingOn;
 
                 if (workingOn != null && !workingOn.isBlank()) {
                     if (sb.length() > 0) {
@@ -587,7 +691,10 @@ public class PomodoroSession {
             return sb.toString();
         }
 
-        private String getMentionString() {
+        /**
+         * @return a space-separated list of all members who want pings as pings
+         */
+        private String getMentionList() {
             StringBuilder sb = new StringBuilder();
             for (Map.Entry<Member, ParticipantDetail> entry : participants.entrySet()) {
                 if (entry.getValue().ping) {

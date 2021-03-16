@@ -11,7 +11,7 @@ import TatsuyaCommands.PomodoroCommand;
 import net.dv8tion.jda.api.Permission;
 import org.jetbrains.annotations.Nullable;
 
-import static CoreBox.PomodoroSession.minutesToTimeString;
+import static CoreBox.PomodoroSession.minutesToDisplayString;
 
 /**
  * Settings such as work/study split for a particular pomodoro session
@@ -28,16 +28,17 @@ public class PomodoroSettings {
     public static final int minWorkSessionsBeforeLongBreak = 1;
     public static final int maxWorkSessionsBeforeLongBreak = 30;
 
-    private final Map<SessionState, StateInfo> states = new HashMap<>() {
+    private final Map<SessionState, StateInfo> defaultStates = new HashMap<>() {
         {
-            put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, "https://img.jakpost.net/c/2020/03/01/2020_03_01_87874_1583031914.jpg"));
-            put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, "https://img.webmd.com/dtmcms/live/webmd/consumer_assets/site_images/article_thumbnails/slideshows/stretches_to_help_you_get_loose_slideshow/1800x1200_stretches_to_help_you_get_loose_slideshow.jpg"));
-            put(SessionState.LONG_BREAK, new StateInfo(SessionState.LONG_BREAK, null, Color.CYAN, "https://miro.medium.com/max/10000/1*BbmQbf-ZHVIgBaoUVShq6g.jpeg"));
-            put(SessionState.NOT_STARTED, new StateInfo(SessionState.NOT_STARTED, null, Color.ORANGE, "https://wp-media.labs.com/wp-content/uploads/2019/01/01140607/How-to-De-Clutter-Your-Workspace1.jpg"));
-            put(SessionState.PAUSED, new StateInfo(SessionState.PAUSED, null, Color.ORANGE, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT-zcKdGFYy2oPkxzqj0lXhGYDyLofR-c083Q&usqp=CAU"));
-            put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, "https://static01.nyt.com/images/2015/11/03/health/well_lyingdown/well_lyingdown-tmagArticle.jpg"));
+            put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, SessionState.WORK.defaultImage));
+            put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, SessionState.BREAK.defaultImage));
+            put(SessionState.LONG_BREAK, new StateInfo(SessionState.LONG_BREAK, null, Color.CYAN, SessionState.LONG_BREAK.defaultImage));
+            put(SessionState.NOT_STARTED, new StateInfo(SessionState.NOT_STARTED, null, Color.ORANGE, SessionState.NOT_STARTED.defaultImage));
+            put(SessionState.PAUSED, new StateInfo(SessionState.PAUSED, null, Color.ORANGE, SessionState.PAUSED.defaultImage));
+            put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, SessionState.FINISHED.defaultImage));
         }
     };
+    private final Map<SessionState, StateInfo> states = new HashMap<>(defaultStates);
 
     /**
      * Presence in the map indicates the setting is on
@@ -69,19 +70,25 @@ public class PomodoroSettings {
      */
     private class StateInfo {
         private final SessionState state;
-        private Integer duration = null;
-        Color colour = null;
-        String thumbnail = null;
+        private Integer duration;
+        Color colour;
+        String image;
 
         public StateInfo(SessionState state) {
             this.state = state;
+            StateInfo defaultInfo = defaultStates.get(state);
+            this.duration = defaultInfo.duration;
+            this.colour = defaultInfo.colour;
+            this.image = defaultInfo.image;
         }
 
-        public StateInfo(SessionState state, Integer duration, Color colour, String thumbnail) {
+
+        public StateInfo(SessionState state, Integer duration, Color colour, String image) {
             this.state = state;
-            this.duration = duration;
-            this.colour = colour;
-            this.thumbnail = thumbnail;
+            StateInfo defaultInfo = defaultStates != null ? defaultStates.get(state) : null;
+            this.duration = duration != null ? duration : (defaultInfo != null ? defaultInfo.duration : null);
+            this.colour = colour != null ? colour : (defaultInfo != null ? defaultInfo.colour : null);
+            this.image = image != null ? image : (defaultInfo != null ? defaultInfo.image : null);
         }
 
         /**
@@ -103,7 +110,8 @@ public class PomodoroSettings {
         final StateInfo info;
         if (states.containsKey(state)) {
             info = states.get(state);
-        } else {
+        }
+        else {
             info = new StateInfo(state);
         }
 
@@ -111,7 +119,7 @@ public class PomodoroSettings {
             info.colour = color;
         }
         if (thumbnail != null) {
-            info.thumbnail = thumbnail;
+            info.image = thumbnail;
         }
         if (duration != null) {
             info.setDuration(duration);
@@ -144,10 +152,10 @@ public class PomodoroSettings {
             return;
         }
         if (duration > maxDuration) {
-            throw new BadUserInputException("Maximum duration: " + minutesToTimeString(maxDuration));
+            throw new BadUserInputException("Maximum duration: " + minutesToDisplayString(maxDuration));
         }
         if (duration < minDuration) {
-            throw new BadUserInputException("Minimum duration: " + minutesToTimeString(minDuration));
+            throw new BadUserInputException("Minimum duration: " + minutesToDisplayString(minDuration));
         }
     }
 
@@ -175,11 +183,13 @@ public class PomodoroSettings {
                     // First 3 arguments are durations
                     if (numericArguments.size() < 3) {
                         checkDuration(parsedInt);
-                    } else if (numericArguments.size() >= 4) {
+                    }
+                    else if (numericArguments.size() >= 4) {
                         throw new BadUserInputException("Arguments incorrect - too many numerical arguments");
                     }
                     numericArguments.add(parsedInt);
-                } catch (NumberFormatException ignored) {
+                }
+                catch (NumberFormatException ignored) {
                     // End of numerical arguments
                     intArgsEnd = true;
                 }
@@ -195,7 +205,8 @@ public class PomodoroSettings {
                 try {
                     BooleanSetting setting = BooleanSetting.valueOf(currentArg[0].toUpperCase());
                     booleanSettings.put(setting, currentArg[1].equalsIgnoreCase("on"));
-                } catch (IllegalArgumentException e) {
+                }
+                catch (IllegalArgumentException e) {
                     throw new BadUserInputException("Unknown setting: " + currentArg[0]);
                 }
             }
@@ -217,7 +228,8 @@ public class PomodoroSettings {
         for (Map.Entry<BooleanSetting, Boolean> setting : booleanSettings.entrySet()) {
             if (setting.getValue()) {
                 this.booleanSettings.add(setting.getKey());
-            } else {
+            }
+            else {
                 this.booleanSettings.remove(setting.getKey());
             }
         }
@@ -252,14 +264,15 @@ public class PomodoroSettings {
         if (workSessionsBeforeLongBreak != null) {
             if (workSessionsBeforeLongBreak == 0) {
                 workSessionsBeforeLongBreak = null;
-            } else if (workSessionsBeforeLongBreak < 0) {
+            }
+            else if (workSessionsBeforeLongBreak < 0) {
                 throw new BadStateException("Must have at least 1 work session before a break (0 to unset)");
             }
         }
         this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
     }
 
-    public boolean hasSetting(BooleanSetting setting) {
+    public boolean getBooleanSetting(BooleanSetting setting) {
         return booleanSettings.contains(setting);
     }
 
@@ -272,5 +285,9 @@ public class PomodoroSettings {
             return timeoutDuration;
         }
         return states.get(state).duration;
+    }
+
+    public String getStateImage(SessionState state) {
+        return states.get(state).image;
     }
 }
