@@ -23,18 +23,11 @@ public class PomodoroSession {
     /*
      * Session Settings
      */
-    public static final int maxDuration = 60 * 5;
-    public static final int minDuration = 5;
-    int workDuration = 25;
-    int breakDuration = 10;
-    Integer longBreakDuration = null;
-    private Integer workSessionsBeforeLongBreak = null;
-    private int timeoutDuration = 60;
     /**
      * Maps participants who wish to be pinged to a message of what they're doing
      */
     private final ParticipantInfo participantInfo = new ParticipantInfo();
-    List<BooleanSetting> booleanSettings = null;
+    private final PomodoroSettings settings = new PomodoroSettings();
 
     /*
      * Fixed Info
@@ -60,7 +53,7 @@ public class PomodoroSession {
     public PomodoroSession(Member author, MessageChannel channel, String args, Instant currentTime) {
         this.author = author;
         this.channel = channel;
-        setFromArgs(args);
+        settings.setFromArgs(args);
         addParticipant(author, true);
         channel.sendMessage(buildEmbed(currentTime)).queue(createdMessage -> {
             mainMessage = createdMessage;
@@ -92,61 +85,8 @@ public class PomodoroSession {
         return channel.getId();
     }
 
-    public void setWorkDuration(int workDuration) {
-        checkRange(workDuration);
-        this.workDuration = workDuration;
-    }
-
-    private void checkRange(Integer duration) {
-        if (duration == null) {
-            return;
-        }
-        if (duration > maxDuration) {
-            throw new BadUserInputException("Maximum duration: " + minutesToTimeString(maxDuration));
-        }
-        if (duration < minDuration) {
-            throw new BadUserInputException("Minimum duration: " + minutesToTimeString(minDuration));
-        }
-    }
-
-    public void setBreakDuration(int breakDuration) {
-        checkRange(breakDuration);
-        this.breakDuration = breakDuration;
-    }
-
-    public void setLongBreak(Integer workSessionsBeforeLongBreak, Integer longBreakDuration) {
-        if (workSessionsBeforeLongBreak != null && longBreakDuration == null
-                || workSessionsBeforeLongBreak == null && longBreakDuration != null) {
-            throw new BadUserInputException("Must provide long break duration AND work sessions until long break (or neither)");
-        }
-        if (workSessionsBeforeLongBreak != null) {
-            int min = 1;
-            if (workSessionsBeforeLongBreak < min) {
-                throw new BadUserInputException("Minimum " + min + " work session before long break");
-            }
-            int max = 30;
-            if (workSessionsBeforeLongBreak > max) {
-                throw new BadUserInputException("Maximum " + max + " work session before long break");
-            }
-        }
-        checkRange(longBreakDuration);
-        this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
-        this.longBreakDuration = longBreakDuration;
-    }
-
-    public void setBooleanSetting(BooleanSetting setting, boolean value) {
-        if (value) {
-            this.booleanSettings.add(setting);
-        }
-        else {
-            this.booleanSettings.remove(setting);
-        }
-    }
-
-    public void setBooleanSettings(Map<BooleanSetting, Boolean> settings) {
-        for (Map.Entry<BooleanSetting, Boolean> setting : settings.entrySet()) {
-            setBooleanSetting(setting.getKey(), setting.getValue());
-        }
+    public PomodoroSettings getSettings() {
+        return settings;
     }
 
     public void removeParticipant(Member participant) {
@@ -161,7 +101,7 @@ public class PomodoroSession {
         EmbedBuilder embedBuilder = new EmbedBuilder();
         embedBuilder.setTitle(String.format("Pomodoro Timer - %s", sessionState.stateTitle));
         embedBuilder.setDescription(currentCycleInfoString(timeNow));
-        embedBuilder.addField("Ping party" + (!booleanSettings.contains(BooleanSetting.PINGS) ? " (off)" : ""), participantInfo.getMemberList(), true);
+        embedBuilder.addField("Ping party" + (!settings.hasSetting(BooleanSetting.PINGS) ? " (off)" : ""), participantInfo.getMemberList(), true);
         embedBuilder.addField("People are working on", participantInfo.getWorkingOnList(), true);
         embedBuilder.addField("", "", true);
         embedBuilder.addField("Completed Stats", getSessionStartedTime() + "\n" + historicStateData.getCompletedStatsString(timeInCurrentState, sessionState), true);
@@ -170,14 +110,14 @@ public class PomodoroSession {
         if (sessionState.defaultColour != null) {
             embedBuilder.setColor(sessionState.defaultColour);
         }
-        if (sessionState.defaultThumbnail != null && booleanSettings.contains(BooleanSetting.IMAGES)) {
+        if (sessionState.defaultThumbnail != null && settings.hasSetting(BooleanSetting.IMAGES)) {
             embedBuilder.setImage(sessionState.defaultThumbnail);
         }
         return embedBuilder.build();
     }
 
     private String getSessionStartedTime() {
-        DateTimeFormatter sdf = DateTimeFormatter.ofPattern((booleanSettings.contains(BooleanSetting.DATE) ? "yy/MM/dd " : "") +"HH:mm z");
+        DateTimeFormatter sdf = DateTimeFormatter.ofPattern((settings.hasSetting(BooleanSetting.DATE) ? "yy/MM/dd " : "") +"HH:mm z");
         String string = "Started: ";
         if (timeSessionStarted == null) {
             return string + "--:--";
@@ -205,6 +145,7 @@ public class PomodoroSession {
         String string = "";
         SessionState nextState = getNextState();
         string += String.format("%s until %s", minutesToTimeString(minutesBetweenTwoTimes(nextPing, timeNow)), nextState.stateGeneral);
+        Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         if (workSessionsBeforeLongBreak != null && nextState != SessionState.LONG_BREAK) {
             string += String.format("\n%d work sessions until long break (not including this one)", workSessionsBeforeLongBreak - historicStateData.workSessionsSinceLastLongBreak() - 1);
         }
@@ -213,9 +154,10 @@ public class PomodoroSession {
 
     public String getSessionSettingsString(boolean shortVersion) {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("Work: %s, Break: %s", minutesToTimeString(workDuration), minutesToTimeString(breakDuration)));
+        sb.append(String.format("Work: %s, Break: %s", minutesToTimeString(settings.getStateDuration(SessionState.WORK)), minutesToTimeString(settings.getStateDuration(SessionState.WORK))));
+        Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         if (workSessionsBeforeLongBreak != null) {
-            sb.append(String.format("\nWork sessions before long break: %d, Long break: %s", workSessionsBeforeLongBreak, minutesToTimeString(longBreakDuration)));
+            sb.append(String.format("\nWork sessions before long break: %d, Long break: %s", workSessionsBeforeLongBreak, minutesToTimeString(settings.getStateDuration(SessionState.LONG_BREAK))));
         }
         else {
             sb.append("\nLong break not set");
@@ -226,7 +168,7 @@ public class PomodoroSession {
             boolean firstSetting = true;
             for (BooleanSetting setting : BooleanSetting.values()) {
                 String formatting = "";
-                if (!booleanSettings.contains(setting)) {
+                if (!settings.hasSetting(setting)) {
                     formatting = "~~";
                 }
                 if (!firstSetting) {
@@ -244,6 +186,7 @@ public class PomodoroSession {
         if (sessionState != SessionState.WORK) {
             return SessionState.WORK;
         }
+        Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         if (workSessionsBeforeLongBreak != null && historicStateData.workSessionsSinceLastLongBreak() + 1 >= workSessionsBeforeLongBreak) {
             return SessionState.LONG_BREAK;
         }
@@ -286,7 +229,7 @@ public class PomodoroSession {
                 nextState = getNextState();
             }
             boolean updateResumeState = true;
-            if (!booleanSettings.contains(BooleanSetting.AUTO) && !forceNextState) {
+            if (!settings.hasSetting(BooleanSetting.AUTO) && !forceNextState) {
                 resumeState = nextState;
                 nextState = SessionState.PAUSED;
                 updateResumeState = false;
@@ -337,7 +280,7 @@ public class PomodoroSession {
                 mainMessage = createdMessage;
                 updateMessageEmojis();
             });
-            if (booleanSettings.contains(BooleanSetting.DELETE)) {
+            if (settings.hasSetting(BooleanSetting.DELETE)) {
                 if (oldMainMessage != null) {
                     oldMainMessage.delete().queue();
                 }
@@ -365,7 +308,7 @@ public class PomodoroSession {
 
     private String buildPingString() {
         StringBuilder sb = new StringBuilder(":clap: *Bangs Pots* :clap:");
-        if (booleanSettings.contains(BooleanSetting.PINGS)) {
+        if (settings.hasSetting(BooleanSetting.PINGS)) {
             String mentionString = participantInfo.getMentionString();
             if (mentionString != null && !mentionString.isBlank()) {
                 sb.append("\n");
@@ -429,21 +372,7 @@ public class PomodoroSession {
             throw new BadUserInputException("Session is currently suspended");
         }
 
-        int duration;
-        switch (sessionState) {
-            case WORK:
-                duration = workDuration;
-                break;
-            case BREAK:
-                duration = breakDuration;
-                break;
-            case LONG_BREAK:
-                duration = longBreakDuration;
-                break;
-            default:
-                throw new BadStateException("Oh, I don't know how long I'm supposed to make it...");
-        }
-        nextPing = currentTime.plus(duration, ChronoUnit.MINUTES);
+        nextPing = currentTime.plus(settings.getStateDuration(sessionState), ChronoUnit.MINUTES);
         if (mainMessage != null) {
             mainMessage.editMessage(buildEmbed(currentTime)).queue();
         }
@@ -456,8 +385,8 @@ public class PomodoroSession {
         if (minutes <= 0) {
             throw new BadUserInputException("Please enter a number of minutes greater than 0");
         }
-        if (minutes >= maxDuration) {
-            throw new BadUserInputException("Please enter a number of minutes less than than " + maxDuration);
+        if (minutes >= PomodoroSettings.maxDuration) {
+            throw new BadUserInputException("Please enter a number of minutes less than than " + PomodoroSettings.maxDuration);
         }
         nextPing = nextPing.plus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);
@@ -470,8 +399,8 @@ public class PomodoroSession {
         if (minutes <= 0) {
             throw new BadUserInputException("Please enter a number of minutes greater than 0");
         }
-        if (minutes >= maxDuration) {
-            throw new BadUserInputException("Please enter a number of minutes less than than " + maxDuration);
+        if (minutes >= PomodoroSettings.maxDuration) {
+            throw new BadUserInputException("Please enter a number of minutes less than than " + PomodoroSettings.maxDuration);
         }
         int timeDiff = minutesBetweenTwoTimes(currentTime, nextPing);
         if (timeDiff < minutes + 1) {
@@ -479,77 +408,6 @@ public class PomodoroSession {
         }
         nextPing = nextPing.minus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);
-    }
-
-    public void setFromSettings(PomodoroSettings args) {
-        if (args == null) {
-            return;
-        }
-
-        // TODO
-    }
-
-    public void setFromArgs(String args) {
-        Map<BooleanSetting, Boolean> booleanSettings = null;
-        if (!args.isEmpty()) {
-            List<Integer> argsInts = new ArrayList<>();
-            for (String arg : args.split(" ")) {
-                try {
-                    argsInts.add(Integer.parseInt(arg));
-                } catch (NumberFormatException ignored) {
-                    String[] currentArg = arg.split(":");
-                    if (currentArg.length != 2 || (!currentArg[1].equalsIgnoreCase("on") && !currentArg[1].equalsIgnoreCase("off"))) {
-                        throw new BadUserInputException("Non-numerical arguments must be in the format 'ping:on' or 'ping:off'");
-                    }
-                    BooleanSetting setting;
-                    try {
-                        setting = BooleanSetting.valueOf(currentArg[0].toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        throw new BadUserInputException("Unknown setting: " + currentArg[0]);
-                    }
-                    if (booleanSettings == null) {
-                        booleanSettings = new HashMap<>();
-                    }
-                    booleanSettings.put(setting, currentArg[1].equalsIgnoreCase("on"));
-                }
-            }
-            if (argsInts.size() > 4) {
-                throw new BadUserInputException("Arguments incorrect - too many numerical arguments");
-            }
-            Integer workDuration = null;
-            Integer breakDuration = null;
-            Integer longBreakDuration = null;
-            Integer sessionsBeforeLongBreakDuration = null;
-            if (argsInts.size() > 0) {
-                workDuration = argsInts.get(0);
-                checkRange(workDuration);
-            }
-            if (argsInts.size() > 1) {
-                breakDuration = argsInts.get(1);
-                checkRange(breakDuration);
-            }
-            if (argsInts.size() > 2) {
-                longBreakDuration = argsInts.get(2);
-                checkRange(longBreakDuration);
-            }
-            if (argsInts.size() > 3) {
-                sessionsBeforeLongBreakDuration = argsInts.get(3);
-            }
-
-            /*
-             * Set settings
-             */
-            setLongBreak(longBreakDuration, sessionsBeforeLongBreakDuration);
-            if (workDuration != null) {
-                setWorkDuration(workDuration);
-            }
-            if (breakDuration != null) {
-                setBreakDuration(breakDuration);
-            }
-            if (booleanSettings != null) {
-                setBooleanSettings(booleanSettings);
-            }
-        }
     }
 
     public enum BooleanSetting {
@@ -635,22 +493,9 @@ public class PomodoroSession {
         }
 
         private int getNextStateDuration(SessionState nextState) {
+            int timeRemaining = settings.getStateDuration(nextState);
             if (!nextState.isStarted) {
-                return timeoutDuration;
-            }
-            int timeRemaining;
-            switch (nextState) {
-                case WORK:
-                    timeRemaining = workDuration;
-                    break;
-                case BREAK:
-                    timeRemaining = breakDuration;
-                    break;
-                case LONG_BREAK:
-                    timeRemaining = longBreakDuration;
-                    break;
-                default:
-                    throw new BadStateException("I've gotten myself in a pickle, can't calculate how long the next session should be");
+                return timeRemaining;
             }
             for (int i = completedItems.size() - 1; i >= 0; i--) {
                 DataItem item = completedItems.get(i);

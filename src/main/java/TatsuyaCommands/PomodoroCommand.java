@@ -418,7 +418,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             @Override
             public void execute(@NotNull String args, @NotNull MessageReceivedEvent event) {
                 PomodoroSession session = getSession(event.getChannel().getId());
-                session.setFromArgs(args);
+                session.getSettings().setFromArgs(args);
                 session.update(Instant.now(), false);
                 sendMessage(event.getChannel(), "Settings updated");
             }
