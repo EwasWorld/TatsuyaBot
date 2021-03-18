@@ -122,12 +122,11 @@ public class PomodoroSession {
     }
 
     private String getSessionStartTimeString() {
-        DateTimeFormatter sdf = DateTimeFormatter.ofPattern((settings.getBooleanSetting(BooleanSetting.DATE) ? "yy/MM/dd " : "") + "HH:mm z");
         String string = "Started: ";
         if (timeSessionStarted == null) {
             return string + "--:--";
         }
-        return string + ZonedDateTime.ofInstant(timeSessionStarted, ZoneId.systemDefault()).format(sdf);
+        return string + ZonedDateTime.ofInstant(timeSessionStarted, ZoneId.systemDefault()).format(settings.getDateTimeFormatter());
     }
 
     private int minutesBetweenTwoTimes(Instant timeA, Instant timeB) {
@@ -178,7 +177,7 @@ public class PomodoroSession {
         /*
          * Timings
          */
-        sb.append(String.format("Work: %s, Break: %s", minutesToDisplayString(settings.getStateDuration(SessionState.WORK)), minutesToDisplayString(settings.getStateDuration(SessionState.WORK))));
+        sb.append(String.format("Work: %s, Break: %s", minutesToDisplayString(settings.getStateDuration(SessionState.WORK)), minutesToDisplayString(settings.getStateDuration(SessionState.BREAK))));
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         if (workSessionsBeforeLongBreak != null) {
             sb.append(String.format("\nWork sessions before long break: %d, Long break: %s", workSessionsBeforeLongBreak, minutesToDisplayString(settings.getStateDuration(SessionState.LONG_BREAK))));
@@ -507,18 +506,18 @@ public class PomodoroSession {
         /**
          * The message title when this is the state
          */
-        String stateTitle;
+        private final String stateTitle;
         /**
          * E.g. "The next state is X"
          */
-        String stateDisplayTitle;
-        Color defaultColour;
-        String defaultImage;
+        private final String stateDisplayTitle;
+        private final Color defaultColour;
+        private final String defaultImage;
         /**
          * Active states are the standard pomodoro states of work/break/long break
          * Non-active states are suspended states like paused/not started/finished
          */
-        boolean isActiveState;
+        private final boolean isActiveState;
 
         SessionState(String stateTitle, String stateDisplayTitle, boolean isActiveState, Color defaultColour, String defaultImage) {
             this.stateTitle = stateTitle;
@@ -526,6 +525,26 @@ public class PomodoroSession {
             this.defaultColour = defaultColour;
             this.defaultImage = defaultImage;
             this.isActiveState = isActiveState;
+        }
+
+        public String getStateTitle() {
+            return stateTitle;
+        }
+
+        public String getStateDisplayTitle() {
+            return stateDisplayTitle;
+        }
+
+        public Color getDefaultColour() {
+            return defaultColour;
+        }
+
+        public String getDefaultImage() {
+            return defaultImage;
+        }
+
+        public boolean isActiveState() {
+            return isActiveState;
         }
     }
 

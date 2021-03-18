@@ -1,6 +1,7 @@
 package CoreBox;
 
 import java.awt.*;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 
@@ -33,12 +34,12 @@ public class PomodoroSettings {
 
     private final Map<SessionState, StateInfo> defaultStates = new HashMap<>() {
         {
-            put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, SessionState.WORK.defaultImage));
-            put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, SessionState.BREAK.defaultImage));
-            put(SessionState.LONG_BREAK, new StateInfo(SessionState.LONG_BREAK, null, Color.CYAN, SessionState.LONG_BREAK.defaultImage));
-            put(SessionState.NOT_STARTED, new StateInfo(SessionState.NOT_STARTED, null, Color.ORANGE, SessionState.NOT_STARTED.defaultImage));
-            put(SessionState.PAUSED, new StateInfo(SessionState.PAUSED, null, Color.ORANGE, SessionState.PAUSED.defaultImage));
-            put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, SessionState.FINISHED.defaultImage));
+            put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, SessionState.WORK.getDefaultImage()));
+            put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, SessionState.BREAK.getDefaultImage()));
+            put(SessionState.LONG_BREAK, new StateInfo(SessionState.LONG_BREAK, null, Color.CYAN, SessionState.LONG_BREAK.getDefaultImage()));
+            put(SessionState.NOT_STARTED, new StateInfo(SessionState.NOT_STARTED, null, Color.ORANGE, SessionState.NOT_STARTED.getDefaultImage()));
+            put(SessionState.PAUSED, new StateInfo(SessionState.PAUSED, null, Color.ORANGE, SessionState.PAUSED.getDefaultImage()));
+            put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, SessionState.FINISHED.getDefaultImage()));
         }
     };
     private final Map<SessionState, StateInfo> states = new HashMap<>(defaultStates);
@@ -61,6 +62,8 @@ public class PomodoroSettings {
      * For the non-active states, the pomodoro session will be cancelled after this amount of inactivity
      */
     private int timeoutDuration = 60;
+    private String dateFormat = "dd/MM/yyyy";
+    private String timeFormat = "HH:mm";
     private Set<String> bannedMembers = new HashSet<>();
     // TODO member.hasPermission(Permission.MANAGE_SERVER, Permission.ADMINISTRATOR, Permission.MANAGE_CHANNEL);
     private Set<Permission> adminPermissions = new HashSet<>();
@@ -98,7 +101,7 @@ public class PomodoroSettings {
          * @throws BadStateException if state type is not active or for null values being assigned to WORK or BREAK states
          */
         public void setDuration(Integer duration) {
-            if (!state.isActiveState) {
+            if (!state.isActiveState()) {
                 throw new BadStateException("Suspended states cannot have a duration");
             }
             if (duration == null && (state == SessionState.WORK || state == SessionState.BREAK)) {
@@ -284,7 +287,7 @@ public class PomodoroSettings {
     }
 
     public Integer getStateDuration(SessionState state) {
-        if (!state.isActiveState) {
+        if (!state.isActiveState()) {
             return timeoutDuration;
         }
         return states.get(state).duration;
@@ -292,5 +295,9 @@ public class PomodoroSettings {
 
     public String getStateImage(SessionState state) {
         return states.get(state).image;
+    }
+
+    public DateTimeFormatter getDateTimeFormatter() {
+        return DateTimeFormatter.ofPattern((booleanSettings.contains(BooleanSetting.DATE) ? dateFormat + " " : "") + timeFormat + " z");
     }
 }
