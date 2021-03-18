@@ -27,6 +27,9 @@ public class PomodoroSettings {
     public static final int minDuration = 5;
     public static final int minWorkSessionsBeforeLongBreak = 1;
     public static final int maxWorkSessionsBeforeLongBreak = 30;
+    public static final String boolSettingDeliminator = ":";
+    public static final String boolSettingOn = "on";
+    public static final String boolSettingOff = "off";
 
     private final Map<SessionState, StateInfo> defaultStates = new HashMap<>() {
         {
@@ -198,13 +201,13 @@ public class PomodoroSettings {
              * Boolean settings come afterwards
              */
             if (intArgsEnd) {
-                String[] currentArg = arg.split(":");
-                if (currentArg.length != 2 || (!currentArg[1].equalsIgnoreCase("on") && !currentArg[1].equalsIgnoreCase("off"))) {
-                    throw new BadUserInputException("Non-numerical arguments must be in the format 'ping:on' or 'ping:off'");
+                String[] currentArg = arg.split(boolSettingDeliminator);
+                if (currentArg.length != 2 || (!currentArg[1].equalsIgnoreCase(boolSettingOn) && !currentArg[1].equalsIgnoreCase(boolSettingOff))) {
+                    throw new BadUserInputException(String.format("Non-numerical arguments must be in the format 'ping%s%s' or 'ping%s%s'", boolSettingDeliminator, boolSettingOn, boolSettingDeliminator, boolSettingOff));
                 }
                 try {
                     BooleanSetting setting = BooleanSetting.valueOf(currentArg[0].toUpperCase());
-                    booleanSettings.put(setting, currentArg[1].equalsIgnoreCase("on"));
+                    booleanSettings.put(setting, currentArg[1].equalsIgnoreCase(boolSettingOn));
                 }
                 catch (IllegalArgumentException e) {
                     throw new BadUserInputException("Unknown setting: " + currentArg[0]);
@@ -217,7 +220,7 @@ public class PomodoroSettings {
          */
         // Long break first as this will validate it (all others were validated in the parse loop)
         if (numericArguments.size() > 2) {
-            setLongBreak(numericArguments.get(2), numericArguments.size() > 3 ? numericArguments.get(3) : null);
+            setLongBreak(numericArguments.size() > 3 ? numericArguments.get(3) : null, numericArguments.get(2));
         }
         if (numericArguments.size() > 1) {
             this.states.get(SessionState.BREAK).setDuration(numericArguments.get(1));
