@@ -229,11 +229,12 @@ public class PomodoroUnitTests {
         verify(mockChannel, atLeastOnce()).sendMessage(argumentCaptor.capture());
         List<MessageEmbed> embeds = argumentCaptor.getAllValues();
 
-        MessageEmbed notStarted = embeds.get(0);
-        List<MessageEmbed.Field> notStartedFields = notStarted.getFields();
-        Assertions.assertTrue(notStarted.getTitle().contains("NOT STARTED"));
-        Assertions.assertEquals(PomodoroSession.SessionState.NOT_STARTED.getDefaultColour(), notStarted.getColor());
+        MessageEmbed notStartedEmbed = embeds.get(0);
+        List<MessageEmbed.Field> notStartedFields = notStartedEmbed.getFields();
+        Assertions.assertTrue(notStartedEmbed.getTitle().contains("NOT STARTED"));
+        Assertions.assertEquals(PomodoroSession.SessionState.NOT_STARTED.getDefaultColour(), notStartedEmbed.getColor());
         Assertions.assertEquals("Nothing submitted", EmbedFields.WORKING_ON.find(notStartedFields).getValue());
+        Assertions.assertEquals("Timer not started", notStartedEmbed.getDescription());
 
         String notStartedSettingsMessage = EmbedFields.SESSION_SETTINGS.find(notStartedFields).getValue();
         String[] newSettingsMessageSplit = notStartedSettingsMessage.split("\n");
@@ -252,13 +253,15 @@ public class PomodoroUnitTests {
         String notStartedWorkingMessage = EmbedFields.WORKING_ON.find(notStartedFields).getValue();
 
         /*
-         * Started/Work
+         * Work
          */
         MessageEmbed workEmbed = embeds.get(1);
         List<MessageEmbed.Field> workFields = workEmbed.getFields();
         Assertions.assertTrue(workEmbed.getTitle().contains("WORKING"));
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultColour(), workEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultImage(), workEmbed.getImage().getUrl());
+        Assertions.assertEquals("25 mins until break\n" +
+                "1 work sessions until long break (not including this one)", workEmbed.getDescription());
 
         String[] workStatsMessage = EmbedFields.COMPLETED_STATS.find(workFields).getValue().split("\n");
         Assertions.assertEquals("Started: " + ZonedDateTime.ofInstant(start, ZoneId.systemDefault()).format(session.getSettings().getDateTimeFormatter()), workStatsMessage[0]);
@@ -273,13 +276,21 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(breakEmbed.getTitle().contains("BREAK"));
         Assertions.assertEquals(PomodoroSession.SessionState.BREAK.getDefaultColour(), breakEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.BREAK.getDefaultImage(), breakEmbed.getImage().getUrl());
+        Assertions.assertEquals("10 mins until work\n" +
+                "1 work sessions until long break", breakEmbed.getDescription());
 
         String[] breakStatsMessage = EmbedFields.COMPLETED_STATS.find(breakFields).getValue().split("\n");
         Assertions.assertEquals(workStatsMessage[0], breakStatsMessage[0]);
         Assertions.assertEquals("Completed work sessions: 1", breakStatsMessage[1]);
         Assertions.assertEquals("Total study time: 25 mins", breakStatsMessage[2]);
 
+        /*
+         * Work
+         */
         // Skip checking second work session
+        MessageEmbed workEmbed2 = embeds.get(3);
+        Assertions.assertEquals("25 mins until long break", workEmbed2.getDescription());
+
         /*
          * Long break
          */
@@ -288,6 +299,7 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(longBreakEmbed.getTitle().contains("LONG BREAK"));
         Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK.getDefaultColour(), longBreakEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK.getDefaultImage(), longBreakEmbed.getImage().getUrl());
+        Assertions.assertEquals("30 mins until work", longBreakEmbed.getDescription());
 
         String longBreakStatsMessage = EmbedFields.COMPLETED_STATS.find(longBreakFields).getValue();
         String[] longBreakStatsMessageSplit = longBreakStatsMessage.split("\n");
@@ -303,6 +315,7 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(pausedEmbed.getTitle().contains("PAUSED"));
         Assertions.assertEquals(PomodoroSession.SessionState.PAUSED.getDefaultColour(), pausedEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.PAUSED.getDefaultImage(), pausedEmbed.getImage().getUrl());
+        Assertions.assertEquals("Session is paused. Resume to continue long break", pausedEmbed.getDescription());
         Assertions.assertEquals(longBreakStatsMessage, EmbedFields.COMPLETED_STATS.find(pausedFields).getValue());
 
         /*
@@ -313,6 +326,7 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(finishedEmbed.getTitle().contains("FINISHED"));
         Assertions.assertEquals(PomodoroSession.SessionState.FINISHED.getDefaultColour(), finishedEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.FINISHED.getDefaultImage(), finishedEmbed.getImage().getUrl());
+        Assertions.assertEquals("Session completed", finishedEmbed.getDescription());
         Assertions.assertEquals(longBreakStatsMessage, EmbedFields.COMPLETED_STATS.find(finishedFields).getValue());
 
         /*

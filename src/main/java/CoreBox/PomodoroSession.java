@@ -162,8 +162,18 @@ public class PomodoroSession {
         SessionState nextState = getNextState();
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         String returnString = String.format("%s until %s", minutesToDisplayString(minutesBetweenTwoTimes(timeCurrentStateEnds, timeNow)), nextState.stateDisplayTitle);
-        if (workSessionsBeforeLongBreak != null && nextState != SessionState.LONG_BREAK) {
-            returnString += String.format("\n%d work sessions until long break (not including this one)", workSessionsBeforeLongBreak - historicStateData.countWorkSessions(true) - 1);
+        if (workSessionsBeforeLongBreak != null && sessionState != SessionState.LONG_BREAK && nextState != SessionState.LONG_BREAK) {
+            int untilNextBreak = workSessionsBeforeLongBreak - historicStateData.countWorkSessions(true);
+            if (sessionState == SessionState.WORK) {
+                untilNextBreak--;
+            }
+            if (untilNextBreak <= 0) {
+                throw new BadStateException("Negative or zero work sessions until next break");
+            }
+            returnString += String.format("\n%d work sessions until long break", untilNextBreak);
+            if (sessionState == SessionState.WORK) {
+                returnString += " (not including this one)";
+            }
         }
         return returnString;
     }
@@ -307,10 +317,10 @@ public class PomodoroSession {
         /*
          * Update times
          */
-        timeCurrentStateEnds = currentTime.plus(historicStateData.getNextStateDurationAdjusted(nextState), ChronoUnit.MINUTES);
         if (timeCurrentStateStarted != null) {
             historicStateData.addCompletedItem(minutesBetweenTwoTimes(timeCurrentStateStarted, currentTime), sessionState);
         }
+        timeCurrentStateEnds = currentTime.plus(historicStateData.getNextStateDurationAdjusted(nextState), ChronoUnit.MINUTES);
         timeCurrentStateStarted = currentTime;
 
         /*
