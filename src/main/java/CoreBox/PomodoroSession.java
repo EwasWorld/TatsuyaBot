@@ -11,7 +11,6 @@ import java.awt.*;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.List;
@@ -163,7 +162,7 @@ public class PomodoroSession {
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
         String returnString = String.format("%s until %s", minutesToDisplayString(minutesBetweenTwoTimes(timeCurrentStateEnds, timeNow)), nextState.stateDisplayTitle);
         if (workSessionsBeforeLongBreak != null && sessionState != SessionState.LONG_BREAK && nextState != SessionState.LONG_BREAK) {
-            int untilNextBreak = workSessionsBeforeLongBreak - historicStateData.countWorkSessions(true);
+            int untilNextBreak = workSessionsBeforeLongBreak - historicStateData.countWorkSessions(true, sessionState);
             if (sessionState == SessionState.WORK) {
                 untilNextBreak--;
             }
@@ -232,7 +231,7 @@ public class PomodoroSession {
             return SessionState.WORK;
         }
         Integer workSessionsBeforeLongBreak = settings.getWorkSessionsBeforeLongBreak();
-        if (workSessionsBeforeLongBreak != null && historicStateData.countWorkSessions(true) + 1 >= workSessionsBeforeLongBreak) {
+        if (workSessionsBeforeLongBreak != null && historicStateData.countWorkSessions(true, sessionState) + 1 >= workSessionsBeforeLongBreak) {
             return SessionState.LONG_BREAK;
         }
         return SessionState.BREAK;
@@ -576,12 +575,15 @@ public class PomodoroSession {
         }
 
         /**
-         * WORK PAUSE WORK counts as 1
+         * Paused sessions will only be counted once, e.g. WORK PAUSE WORK counts as 1
          *
          * @param countSinceLongBreak false: count all work session, true: work sessions since last long break
+         * @param currentState if the current work state is WORK and the only data was WORK, PAUSED then the count
+         *                     should be 0 as the current work session is not counted and the current state is just
+         *                     a resumed work session
          */
-        int countWorkSessions(boolean countSinceLongBreak) {
-            SessionState lastActiveState = null;
+        int countWorkSessions(boolean countSinceLongBreak, SessionState currentState) {
+            SessionState lastActiveState = currentState.isActiveState ? currentState : null;
             int count = 0;
             for (int i = completedItems.size() - 1; i >= 0; i--) {
                 DataItem item = completedItems.get(i);
@@ -612,7 +614,7 @@ public class PomodoroSession {
                 workTimeElapsed += timeInCurrentState;
             }
 
-            String returnString = "Completed work sessions: " + countWorkSessions(false);
+            String returnString = "Completed work sessions: " + countWorkSessions(false, sessionState);
             returnString += "\nTotal study time: " + minutesToDisplayString(workTimeElapsed);
             return returnString;
         }

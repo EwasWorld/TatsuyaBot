@@ -47,14 +47,6 @@ public class PomodoroUnitTests {
      *   - Currently on a PAUSED long break - edit to not have a long break?
      *   - Edit timeout time in suspended state to lower than elapsed time?
      * Time & Settings commands
-     * Pause & Resume
-     *   - Ensure it resumes to the correct state
-     *   - Check stats and work session counts
-     *   - Double pause
-     *   - Double resume
-     * Skip
-     *   - Ensure the next state is correct
-     *   - Skip when suspended
      * Changing timings:
      *   - Reset, Bump, BigBump, Lower, BigLower
      *   - Check bounds
@@ -464,6 +456,89 @@ public class PomodoroUnitTests {
             messagesProcessed++;
         }
         Assertions.assertEquals(expectedStudyTime.length, messagesProcessed);
+    }
+
+    /**
+     * Ensure that
+     *  - skipping cycles through the correct states
+     *  - pausing and resuming works correctly and doesn't interfere with the skipping cycling
+     *  - double pausing/Resuming is rejected
+     */
+    @Test
+    public void generalStateTransitions() {
+        int workBeforeLongBreak = 3;
+        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 20 30 " + workBeforeLongBreak, start);
+
+        Assertions.assertEquals(PomodoroSession.SessionState.NOT_STARTED, session.getSessionState());
+        Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
+        Assertions.assertThrows(BadUserInputException.class, () -> session.userPauseSession(start));
+        session.userStartSession(start);
+
+        /*
+         * Skipping
+         */
+        for (int j = 0; j < 3; j++) {
+            for (int i = 0; ; i++) {
+                System.out.println("No pauses round: " + j + " " + i);
+                Assertions.assertEquals(PomodoroSession.SessionState.WORK, session.getSessionState());
+                session.update(start, true);
+                if (i == workBeforeLongBreak - 1) {
+                    break;
+                }
+                Assertions.assertEquals(PomodoroSession.SessionState.BREAK, session.getSessionState());
+                session.update(start, true);
+            }
+            Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK, session.getSessionState());
+            session.update(start, true);
+        }
+
+        /*
+         * With pauses
+         */
+        for (int i = 0; ; i++) {
+            System.out.println("Pauses round: " + i);
+
+            Assertions.assertEquals(PomodoroSession.SessionState.WORK, session.getSessionState());
+            Assertions.assertThrows(BadUserInputException.class, () -> session.userResumeSession(start));
+            Assertions.assertEquals(PomodoroSession.SessionState.WORK, session.getSessionState());
+            session.userPauseSession(start);
+            Assertions.assertEquals(PomodoroSession.SessionState.PAUSED, session.getSessionState());
+            Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
+            session.userResumeSession(start);
+            Assertions.assertEquals(PomodoroSession.SessionState.WORK, session.getSessionState());
+            session.update(start, true);
+
+            if (i == workBeforeLongBreak - 1) {
+                break;
+            }
+            Assertions.assertEquals(PomodoroSession.SessionState.BREAK, session.getSessionState());
+            Assertions.assertThrows(BadUserInputException.class, () -> session.userResumeSession(start));
+            Assertions.assertEquals(PomodoroSession.SessionState.BREAK, session.getSessionState());
+            session.userPauseSession(start);
+            Assertions.assertEquals(PomodoroSession.SessionState.PAUSED, session.getSessionState());
+            Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
+            session.userResumeSession(start);
+            Assertions.assertEquals(PomodoroSession.SessionState.BREAK, session.getSessionState());
+            session.update(start, true);
+        }
+        Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK, session.getSessionState());
+        Assertions.assertThrows(BadUserInputException.class, () -> session.userResumeSession(start));
+        Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK, session.getSessionState());
+        session.userPauseSession(start);
+        Assertions.assertEquals(PomodoroSession.SessionState.PAUSED, session.getSessionState());
+        Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
+        Assertions.assertThrows(BadUserInputException.class, () -> session.userPauseSession(start));
+        session.userResumeSession(start);
+        Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK, session.getSessionState());
+        session.update(start, true);
+
+        /*
+         * Finish
+         */
+        session.userStopSession(start);
+        Assertions.assertEquals(PomodoroSession.SessionState.FINISHED, session.getSessionState());
+        Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
+        Assertions.assertThrows(BadUserInputException.class, () -> session.userPauseSession(start));
     }
 
     /**
