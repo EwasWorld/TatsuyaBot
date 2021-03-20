@@ -1,3 +1,4 @@
+import BotFrameworkBox.Emoji;
 import CoreBox.PomodoroSession;
 import CoreBox.PomodoroSettings;
 import ExceptionsBox.BadUserInputException;
@@ -16,10 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.time.*;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -30,20 +28,16 @@ public class PomodoroUnitTests {
     private final String memberName = "MemberName";
     private Member mockMember;
     private MessageChannel mockChannel;
-    private MessageAction mockMessageAction;
+    private static MessageAction mockMessageAction;
     /**
-     * List collects all mock messages created on {@link #mockChannel}.sendMessage()
+     * List collects all MockMessages created
      * Items are appended to the end, later messages are newer
      */
-    private List<Message> mockMessages;
+    private static List<MockMessage> mockMessages;
     private Instant start;
+
     /*
      * TODO Implement Tests:
-     * New & start
-     *   - Check built embed is correct
-     *     - Check stats and time until next state update as intended
-     *   - Check emojis are cleared and re-added correctly
-     *   - Check start causes the message to be updated
      * Join & Leave (check displayed correctly, check ping works correctly)
      *   - With/without message/pings
      *   - Pings and message
@@ -71,9 +65,10 @@ public class PomodoroUnitTests {
      * Misc
      *   - Check timeout works
      *   - Check update works?
+     *   - Boolean settings work as intended
      */
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings("unchecked")
     @BeforeEach
     public void setup() {
         start = Instant.now();
@@ -83,21 +78,24 @@ public class PomodoroUnitTests {
         when(mockMember.getEffectiveName()).thenReturn(memberName);
 
         mockMessageAction = mock(MessageAction.class);
-        AuditableRestAction mockAuditableRestAction = mock(AuditableRestAction.class);
         mockChannel = mock(MessageChannel.class);
-        when(mockChannel.sendMessage(any(MessageEmbed.class))).thenReturn(mockMessageAction);
-        when(mockChannel.sendMessage(anyString())).thenReturn(mockMessageAction);
+
+        /*
+         * Capture message arguments and save generated Message mock
+         */
+        when(mockChannel.sendMessage(any(MessageEmbed.class))).thenAnswer(ans -> {
+            new MockMessage((MessageEmbed) ans.getArguments()[0], true);
+            return mockMessageAction;
+        });
+        when(mockChannel.sendMessage(anyString())).thenAnswer(ans -> {
+            new MockMessage((String) ans.getArguments()[0], true);
+            return mockMessageAction;
+        });
         doAnswer(ans -> {
-            Message mockMessage = mock(Message.class);
-            mockMessages.add(mockMessage);
-            when(mockMessage.clearReactions()).thenReturn(mockAuditableRestAction);
-            when(mockMessage.addReaction(anyString())).thenReturn(mockAuditableRestAction);
-            when(mockMessage.delete()).thenReturn(mockAuditableRestAction);
             Consumer<Message> callback = (Consumer<Message>) ans.getArguments()[0];
-            callback.accept(mockMessage);
+            callback.accept(mockMessages.get(mockMessages.size() - 1).mock);
             return null;
         }).when(mockMessageAction).queue(any(Consumer.class));
-        doNothing().when(mockAuditableRestAction).queue();
     }
 
     /**
@@ -212,8 +210,15 @@ public class PomodoroUnitTests {
      */
     @Test
     public void generalCheckEmbeds() throws Exception {
+        final String statsStarted = "Started: %s";
+        final String statsWorkSessions = "Completed work sessions: %d";
+        final String statsStudyTime = "Total study time: %d mins";
+
+        /*
+         * Run through all states
+         */
         Instant currentTime = start;
-        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 10 30 2 images:on", start);
+        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 10 30 2 images:on", currentTime);
         session.userStartSession(currentTime); // Start work
         currentTime = currentTime.plusSeconds(60 * 25);
         session.update(currentTime, true); // Start break
@@ -229,6 +234,9 @@ public class PomodoroUnitTests {
         verify(mockChannel, atLeastOnce()).sendMessage(argumentCaptor.capture());
         List<MessageEmbed> embeds = argumentCaptor.getAllValues();
 
+        /*
+         * Not Started
+         */
         MessageEmbed notStartedEmbed = embeds.get(0);
         List<MessageEmbed.Field> notStartedFields = notStartedEmbed.getFields();
         Assertions.assertTrue(notStartedEmbed.getTitle().contains("NOT STARTED"));
@@ -243,9 +251,9 @@ public class PomodoroUnitTests {
         Assertions.assertEquals("Session created by: " + memberName, newSettingsMessageSplit[2]);
 
         String[] notStartedStatsMessage = EmbedFields.COMPLETED_STATS.find(notStartedFields).getValue().split("\n");
-        Assertions.assertEquals("Started: --:--", notStartedStatsMessage[0]);
-        Assertions.assertEquals("Completed work sessions: 0", notStartedStatsMessage[1]);
-        Assertions.assertEquals("Total study time: 0 mins", notStartedStatsMessage[2]);
+        Assertions.assertEquals(String.format(statsStarted, "--:--"), notStartedStatsMessage[0]);
+        Assertions.assertEquals(String.format(statsWorkSessions, 0), notStartedStatsMessage[1]);
+        Assertions.assertEquals(String.format(statsStudyTime, 0), notStartedStatsMessage[2]);
 
         int notStartedBlankFields = EmbedFields.countBlank(notStartedFields);
         Assertions.assertEquals(1, notStartedBlankFields);
@@ -260,13 +268,12 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(workEmbed.getTitle().contains("WORKING"));
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultColour(), workEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultImage(), workEmbed.getImage().getUrl());
-        Assertions.assertEquals("25 mins until break\n" +
-                "1 work sessions until long break (not including this one)", workEmbed.getDescription());
+        Assertions.assertEquals("25 mins until break\n1 work session until long break (not including this one)", workEmbed.getDescription());
 
         String[] workStatsMessage = EmbedFields.COMPLETED_STATS.find(workFields).getValue().split("\n");
-        Assertions.assertEquals("Started: " + ZonedDateTime.ofInstant(start, ZoneId.systemDefault()).format(session.getSettings().getDateTimeFormatter()), workStatsMessage[0]);
-        Assertions.assertEquals("Completed work sessions: 0", workStatsMessage[1]);
-        Assertions.assertEquals("Total study time: 0 mins", workStatsMessage[2]);
+        Assertions.assertEquals(String.format(statsStarted, ZonedDateTime.ofInstant(start, ZoneId.systemDefault()).format(session.getSettings().getDateTimeFormatter())), workStatsMessage[0]);
+        Assertions.assertEquals(String.format(statsWorkSessions, 0), workStatsMessage[1]);
+        Assertions.assertEquals(String.format(statsStudyTime, 0), workStatsMessage[2]);
 
         /*
          * Break
@@ -276,13 +283,13 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(breakEmbed.getTitle().contains("BREAK"));
         Assertions.assertEquals(PomodoroSession.SessionState.BREAK.getDefaultColour(), breakEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.BREAK.getDefaultImage(), breakEmbed.getImage().getUrl());
-        Assertions.assertEquals("10 mins until work\n" +
-                "1 work sessions until long break", breakEmbed.getDescription());
+        Assertions.assertEquals("10 mins until work\n1 work session until long break", breakEmbed.getDescription());
 
-        String[] breakStatsMessage = EmbedFields.COMPLETED_STATS.find(breakFields).getValue().split("\n");
-        Assertions.assertEquals(workStatsMessage[0], breakStatsMessage[0]);
-        Assertions.assertEquals("Completed work sessions: 1", breakStatsMessage[1]);
-        Assertions.assertEquals("Total study time: 25 mins", breakStatsMessage[2]);
+        String breakStatsMessage = EmbedFields.COMPLETED_STATS.find(breakFields).getValue();
+        String[] breakStatsMessageSplit = breakStatsMessage.split("\n");
+        Assertions.assertEquals(workStatsMessage[0], breakStatsMessageSplit[0]);
+        Assertions.assertEquals(String.format(statsWorkSessions, 1), breakStatsMessageSplit[1]);
+        Assertions.assertEquals(String.format(statsStudyTime, 25), breakStatsMessageSplit[2]);
 
         /*
          * Work
@@ -290,6 +297,7 @@ public class PomodoroUnitTests {
         // Skip checking second work session
         MessageEmbed workEmbed2 = embeds.get(3);
         Assertions.assertEquals("25 mins until long break", workEmbed2.getDescription());
+        Assertions.assertEquals(breakStatsMessage, EmbedFields.COMPLETED_STATS.find(workEmbed2.getFields()).getValue());
 
         /*
          * Long break
@@ -304,8 +312,8 @@ public class PomodoroUnitTests {
         String longBreakStatsMessage = EmbedFields.COMPLETED_STATS.find(longBreakFields).getValue();
         String[] longBreakStatsMessageSplit = longBreakStatsMessage.split("\n");
         Assertions.assertEquals(workStatsMessage[0], longBreakStatsMessageSplit[0]);
-        Assertions.assertEquals("Completed work sessions: 2", longBreakStatsMessageSplit[1]);
-        Assertions.assertEquals("Total study time: 50 mins", longBreakStatsMessageSplit[2]);
+        Assertions.assertEquals(String.format(statsWorkSessions, 2), longBreakStatsMessageSplit[1]);
+        Assertions.assertEquals(String.format(statsStudyTime, 50), longBreakStatsMessageSplit[2]);
 
         /*
          * Paused
@@ -342,9 +350,181 @@ public class PomodoroUnitTests {
     }
 
 
+    /**
+     * Check that the emojis added to each state are correct and that no emojis are added to other messages
+     */
     @Test
-    public void newCheckEmojis() {
-        // TODO
+    public void generalCheckEmojis() {
+        Instant currentTime = start;
+        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 10 30 2", currentTime);
+        session.userStartSession(currentTime); // Start work
+        currentTime = currentTime.plusSeconds(60 * 25);
+        session.update(currentTime, true); // Start break
+        session.update(currentTime, true); // Start work
+        currentTime = currentTime.plusSeconds(60 * 25);
+        session.update(currentTime, true); // Start long break
+        session.userPauseSession(currentTime);
+        session.userStopSession(currentTime);
+
+        final Emoji[] suspendedEmojis = new Emoji[]{Emoji.PLAY, Emoji.PERSON_HAND_RAISED, Emoji.PERSON_NO_HANDS, Emoji.STOP};
+        final Emoji[] activeEmojis = new Emoji[]{Emoji.SKIP, Emoji.PAUSE, Emoji.PERSON_HAND_RAISED, Emoji.PERSON_NO_HANDS, Emoji.UP_ARROW, Emoji.DOUBLE_UP_ARROW, Emoji.DOWN_ARROW, Emoji.DOUBLE_DOWN_ARROW, Emoji.STOP};
+        final Emoji[][] messagesExpectedEmojis = new Emoji[][]{
+                suspendedEmojis, // Not Started
+                activeEmojis, // Work
+                activeEmojis, // Break
+                activeEmojis, // Work 2
+                activeEmojis, // Long Break
+                suspendedEmojis, // Paused
+                new Emoji[]{} // Finished
+        };
+
+        int messagesProcessed = 0;
+        for (MockMessage mockMessage : mockMessages) {
+            if (mockMessage.contents.contains("Bangs Pots")) {
+                // Return is handled by the mock, this just captures arguments
+                //noinspection ResultOfMethodCallIgnored
+                verify(mockMessage.mock, times(0)).clearReactions();
+                //noinspection ResultOfMethodCallIgnored
+                verify(mockMessage.mock, times(0)).addReaction(anyString());
+                continue;
+            }
+            System.out.println("Processing message: " + messagesProcessed);
+
+            ArgumentCaptor<String> argumentCaptor = ArgumentCaptor.forClass(String.class);
+            // Return is handled by the mock, this just captures arguments
+            //noinspection ResultOfMethodCallIgnored
+            verify(mockMessage.mock, times(1)).clearReactions();
+            //noinspection ResultOfMethodCallIgnored
+            verify(mockMessage.mock, times(messagesExpectedEmojis[messagesProcessed].length)).addReaction(argumentCaptor.capture());
+
+            List<String> expectedEmoji = new ArrayList<>();
+            for (Emoji emoji : messagesExpectedEmojis[messagesProcessed]) {
+                expectedEmoji.add(emoji.getUnicode());
+            }
+            Assertions.assertEquals(expectedEmoji, argumentCaptor.getAllValues());
+            messagesProcessed++;
+        }
+        Assertions.assertEquals(messagesExpectedEmojis.length, messagesProcessed);
+    }
+
+    /**
+     * Check the timings displayed on the embed are accurate
+     */
+    @Test
+    public void checkEmbedTimings() throws Exception {
+        final String statsWorkSessions = "Completed work sessions: %d";
+        final String statsStudyTime = "Total study time: %d mins";
+
+        Instant currentTime = start;
+        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 20 30 2", currentTime);
+        session.userStartSession(currentTime); // Start work
+        currentTime = currentTime.plusSeconds(60 * 2);
+        session.update(currentTime, false); // 2 mins elapsed
+        currentTime = currentTime.plusSeconds(60 * 8);
+        session.update(currentTime, false); // 10 mins elapsed
+        session.update(currentTime, true); // Start break
+        currentTime = currentTime.plusSeconds(60 * 2);
+        session.update(currentTime, false); // 2 mins elapsed
+        currentTime = currentTime.plusSeconds(60 * 8);
+        session.update(currentTime, false); // 10 mins elapsed
+
+        int[] expectedStudyTime = new int[]{
+                0, // Not started
+                0, // Work
+                2, // Work 2 mins elapsed
+                10, // Work 10 mins elapsed
+                10, // Break
+                10, // Break 2 mins elapsed
+                10, // Break 10 mins elapsed
+        };
+        String[] expectedDescriptions = new String[]{
+                "Timer not started", // Not started
+                "25 mins until break\n1 work session until long break (not including this one)", // Work
+                "23 mins until break\n1 work session until long break (not including this one)", // Work 2 mins elapsed
+                "15 mins until break\n1 work session until long break (not including this one)", // Work 10 mins elapsed
+                "20 mins until work\n1 work session until long break", // Break
+                "18 mins until work\n1 work session until long break", // Break 2 mins elapsed
+                "10 mins until work\n1 work session until long break" // Break 10 mins elapsed
+        };
+        // Sanity check
+        Assertions.assertEquals(expectedStudyTime.length, expectedDescriptions.length);
+
+        int messagesProcessed = 0;
+        for (MockMessage mockMessage : mockMessages) {
+            MessageEmbed embed = mockMessage.embed;
+            if (embed == null) {
+                continue;
+            }
+            System.out.println("Processing message: " + messagesProcessed);
+            Assertions.assertEquals(expectedDescriptions[messagesProcessed], embed.getDescription());
+            String[] stats = EmbedFields.COMPLETED_STATS.find(embed.getFields()).getValue().split("\n");
+            Assertions.assertEquals(String.format(statsWorkSessions, messagesProcessed < 4 ? 0 : 1), stats[1]);
+            Assertions.assertEquals(String.format(statsStudyTime, expectedStudyTime[messagesProcessed]), stats[2]);
+
+            messagesProcessed++;
+        }
+        Assertions.assertEquals(expectedStudyTime.length, messagesProcessed);
+    }
+
+    /**
+     * Information about a message that was sent to a channel
+     */
+    private static class MockMessage {
+        /**
+         * The mock that was generated to represent this message in Discord
+         */
+        Message mock;
+        String contents;
+        /**
+         * new or edit
+         */
+        boolean isNew;
+        /**
+         * Null if the message was generated via a string
+         */
+        MessageEmbed embed = null;
+
+        public MockMessage(String contents, boolean isNew) {
+            mock = generate();
+            this.contents = contents;
+            this.isNew = isNew;
+            mockMessages.add(this);
+        }
+
+        public MockMessage(MessageEmbed contents, boolean isNew) {
+            this(embedToString(contents), isNew);
+            embed = contents;
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static Message generate() {
+            AuditableRestAction mockAuditableRestAction = mock(AuditableRestAction.class);
+
+            Message mockMessage = mock(Message.class);
+            when(mockMessage.editMessage(any(MessageEmbed.class))).thenAnswer(editAns -> {
+                new MockMessage((MessageEmbed) editAns.getArguments()[0], false);
+                return mockMessageAction;
+            });
+            when(mockMessage.editMessage(anyString())).thenAnswer(editAns -> {
+                new MockMessage((MessageEmbed) editAns.getArguments()[0], false);
+                return mockMessageAction;
+            });
+            when(mockMessage.clearReactions()).thenReturn(mockAuditableRestAction);
+            when(mockMessage.addReaction(anyString())).thenReturn(mockAuditableRestAction);
+            when(mockMessage.delete()).thenReturn(mockAuditableRestAction);
+
+            doNothing().when(mockAuditableRestAction).queue();
+            return mockMessage;
+        }
+
+        /**
+         * @return stringified message embed. Does not necessarily exactly represent the embed's full contents
+         */
+        private static String embedToString(MessageEmbed embed) {
+            String contentString = embed.getTitle();
+            contentString += embed.getDescription();
+            return contentString;
+        }
     }
 
     private enum EmbedFields {

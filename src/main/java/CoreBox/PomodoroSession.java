@@ -170,7 +170,7 @@ public class PomodoroSession {
             if (untilNextBreak <= 0) {
                 throw new BadStateException("Negative or zero work sessions until next break");
             }
-            returnString += String.format("\n%d work sessions until long break", untilNextBreak);
+            returnString += String.format("\n%d work session%s until long break", untilNextBreak, untilNextBreak > 1 ? "s" : "");
             if (sessionState == SessionState.WORK) {
                 returnString += " (not including this one)";
             }
@@ -311,7 +311,8 @@ public class PomodoroSession {
     /**
      * Update the current state, update the message, ping if moving to an active state
      *
-     * @param forceSendPings ping even if not moving to an active state
+     * @param forceSendPings ping even if not moving to an active state (mostly important when auto is off so after a
+     *                       work session, the next state will be paused until someone starts the break)
      */
     private void update(SessionState nextState, Instant currentTime, boolean forceSendPings) {
         /*
