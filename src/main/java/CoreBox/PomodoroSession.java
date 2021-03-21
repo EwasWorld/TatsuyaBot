@@ -252,20 +252,18 @@ public class PomodoroSession {
             hours = Math.floorDiv(minutes, 60);
             minutes = minutes % 60;
         }
-        StringBuilder sb = new StringBuilder();
-        if (hours == 1) {
-            sb.append("1 hour ");
+
+        String finalString = "";
+        if (hours > 0) {
+            finalString += String.format("%d hour%s", hours, hours > 1 ? "s" : "");
         }
-        else if (hours > 1) {
-            sb.append(String.format("%d hours ", hours));
+        if (hours > 0 && minutes > 0) {
+            finalString += " ";
         }
-        if (minutes == 1) {
-            sb.append("1 min");
+        if (minutes > 0) {
+            finalString += String.format("%d min%s", minutes, minutes > 1 ? "s" : "");
         }
-        else if (minutes > 1) {
-            sb.append(String.format("%d mins", minutes));
-        }
-        return sb.toString();
+        return finalString;
     }
 
     /**
@@ -467,7 +465,13 @@ public class PomodoroSession {
         }
         int timeRemaining = minutesBetweenTwoTimes(currentTime, timeCurrentStateEnds);
         if (timeRemaining + minutes >= PomodoroSettings.maxDuration) {
-            throw new BadUserInputException("Please enter a number of minutes less than than " + (PomodoroSettings.maxDuration - timeRemaining));
+            int maxIncrease = PomodoroSettings.maxDuration - timeRemaining;
+            throw new BadUserInputException(
+                    String.format("Max duration is %s. Can increase the current timer by up to %s (%s min%s)",
+                            minutesToDisplayString(PomodoroSettings.maxDuration),
+                            minutesToDisplayString(maxIncrease),
+                            maxIncrease,
+                            maxIncrease > 1 ? "s" : ""));
         }
         timeCurrentStateEnds = timeCurrentStateEnds.plus(minutes, ChronoUnit.MINUTES);
         update(currentTime, false);

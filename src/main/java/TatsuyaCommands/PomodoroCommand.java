@@ -47,7 +47,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             if (nextCheck.isAfter(currentTime)) {
                 try {
                     Thread.sleep(10 * 1000);
-                } catch (InterruptedException e) {
+                }
+                catch (InterruptedException e) {
                     e.printStackTrace();
                 }
                 continue;
@@ -69,7 +70,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             nextCheck = nextCheck.plus(20, ChronoUnit.SECONDS);
             try {
                 Thread.sleep(10 * 1000);
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
@@ -157,7 +159,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
         PomodoroSession session;
         try {
             session = getSession(event.getChannel().getId());
-        } catch (BadUserInputException e) {
+        }
+        catch (BadUserInputException e) {
             return false;
         }
         // Only look at emojis on a pomodoro message
@@ -191,7 +194,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
         }
         try {
             command.emojiExecute(session, event.getMember());
-        } catch (BadUserInputException e) {
+        }
+        catch (BadUserInputException e) {
             event.getChannel().sendMessage(e.getMessage()).queue();
         }
         if (command.removeEmoji()) {
@@ -315,7 +319,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                     if (!args.isEmpty()) {
                         sendMessage(event.getChannel(), event.getMember().getEffectiveName() + ", you've been banned from posting a status.");
                     }
-                } else {
+                }
+                else {
                     session.getParticipants().addParticipant(event.getMember(), ping, args);
                 }
                 session.update(Instant.now(), false);
@@ -686,15 +691,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             @Override
             public void execute(@NotNull String args, @NotNull MessageReceivedEvent event) {
                 PomodoroSession session = getSession(event.getChannel().getId());
-                int time = defaultShortBump;
-                if (!args.isBlank()) {
-                    try {
-                        time = Integer.parseInt(args);
-                    } catch (NumberFormatException e) {
-                        throw new BadUserInputException("Argument must be a number");
-                    }
-                }
-                session.addTimeToCurrentState(time, Instant.now());
+                bump(args, defaultShortBump, true, session);
             }
 
             /**
@@ -726,7 +723,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
              */
             @Override
             public void emojiExecute(PomodoroSession session, Member member) {
-                session.addTimeToCurrentState(defaultShortBump, Instant.now());
+                bump(null, defaultShortBump, true, session);
             }
 
             /**
@@ -752,15 +749,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             @Override
             public void execute(@NotNull String args, @NotNull MessageReceivedEvent event) {
                 PomodoroSession session = getSession(event.getChannel().getId());
-                int time = defaultBigBump;
-                if (!args.isBlank()) {
-                    try {
-                        time = Integer.parseInt(args);
-                    } catch (NumberFormatException e) {
-                        throw new BadUserInputException("Argument must be a number");
-                    }
-                }
-                session.addTimeToCurrentState(time, Instant.now());
+                bump(args, defaultBigBump, true, session);
             }
 
             /**
@@ -792,7 +781,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
              */
             @Override
             public void emojiExecute(PomodoroSession session, Member member) {
-                session.addTimeToCurrentState(defaultBigBump, Instant.now());
+                bump(null, defaultBigBump, true, session);
             }
 
             /**
@@ -818,15 +807,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             @Override
             public void execute(@NotNull String args, @NotNull MessageReceivedEvent event) {
                 PomodoroSession session = getSession(event.getChannel().getId());
-                int time = defaultShortBump;
-                if (!args.isBlank()) {
-                    try {
-                        time = Integer.parseInt(args);
-                    } catch (NumberFormatException e) {
-                        throw new BadUserInputException("Argument must be a number");
-                    }
-                }
-                session.removeTimeFromCurrentState(time, Instant.now());
+                bump(args, defaultShortBump, false, session);
             }
 
             /**
@@ -858,7 +839,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
              */
             @Override
             public void emojiExecute(PomodoroSession session, Member member) {
-                session.removeTimeFromCurrentState(defaultShortBump, Instant.now());
+                bump(null, defaultShortBump, false, session);
             }
 
             /**
@@ -884,15 +865,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             @Override
             public void execute(@NotNull String args, @NotNull MessageReceivedEvent event) {
                 PomodoroSession session = getSession(event.getChannel().getId());
-                int time = defaultBigBump;
-                if (!args.isBlank()) {
-                    try {
-                        time = Integer.parseInt(args);
-                    } catch (NumberFormatException e) {
-                        throw new BadUserInputException("Argument must be a number");
-                    }
-                }
-                session.removeTimeFromCurrentState(time, Instant.now());
+                bump(args, defaultBigBump, false, session);
             }
 
             /**
@@ -924,7 +897,7 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
              */
             @Override
             public void emojiExecute(PomodoroSession session, Member member) {
-                session.removeTimeFromCurrentState(defaultBigBump, Instant.now());
+                bump(null, defaultBigBump, false, session);
             }
 
             /**
@@ -1122,6 +1095,24 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
 
         public boolean removeEmoji() {
             return false;
+        }
+
+        private static void bump(String stringAmount, int defaultAmount, boolean increase, PomodoroSession session) {
+            int amount = defaultAmount;
+            if (stringAmount != null && !stringAmount.isBlank()) {
+                try {
+                    amount = Integer.parseInt(stringAmount);
+                }
+                catch (NumberFormatException e) {
+                    throw new BadUserInputException("Argument must be a number");
+                }
+            }
+            if (increase) {
+                session.addTimeToCurrentState(amount, Instant.now());
+            }
+            else {
+                session.removeTimeFromCurrentState(amount, Instant.now());
+            }
         }
     }
 
