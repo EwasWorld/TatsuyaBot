@@ -50,8 +50,6 @@ public class PomodoroUnitTests {
      * Changing timings:
      *   - Reset, Bump, BigBump, Lower, BigLower
      *   - Check bounds
-     * Stop
-     *   - From all states
      * Ban & Unban
      *   - Try to join with/without message/pings
      * Misc
@@ -460,9 +458,9 @@ public class PomodoroUnitTests {
 
     /**
      * Ensure that
-     *  - skipping cycles through the correct states
-     *  - pausing and resuming works correctly and doesn't interfere with the skipping cycling
-     *  - double pausing/Resuming is rejected
+     * - skipping cycles through the correct states
+     * - pausing and resuming works correctly and doesn't interfere with the skipping cycling
+     * - double pausing/Resuming is rejected
      */
     @Test
     public void generalStateTransitions() {
@@ -539,6 +537,39 @@ public class PomodoroUnitTests {
         Assertions.assertEquals(PomodoroSession.SessionState.FINISHED, session.getSessionState());
         Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
         Assertions.assertThrows(BadUserInputException.class, () -> session.userPauseSession(start));
+    }
+
+    /**
+     * Test stop from all states
+     */
+    @Test
+    public void generalStop() {
+        final PomodoroSession[] session = {null};
+        ExecutableItem[] actions = {
+                () -> { }, // Not started
+                () -> session[0].userStartSession(start), // Start work
+                () -> session[0].update(start, true), // Start break
+                () -> session[0].update(start, true), // Start work
+                () -> session[0].update(start, true), // Start long break
+                () -> session[0].userPauseSession(start),
+        };
+
+        for (int j = 0; j < actions.length; j++) {
+            session[0] = new PomodoroSession(mockMember, mockChannel, "25 10 30 2", start);
+            for (int i = 0; i < j; i++) {
+                actions[i].execute();
+            }
+            session[0].userStopSession(start);
+            Assertions.assertEquals(PomodoroSession.SessionState.FINISHED, session[0].getSessionState());
+        }
+        Assertions.assertThrows(BadUserInputException.class, () -> session[0].userStopSession(start));
+    }
+
+    /**
+     * Helper function for calling methods in a loop
+     */
+    private interface ExecutableItem {
+        void execute();
     }
 
     /**
