@@ -602,7 +602,7 @@ public class PomodoroUnitTests {
             embed = contents;
         }
 
-        @SuppressWarnings({"rawtypes", "unchecked"})
+        @SuppressWarnings("unchecked")
         private static Message generate() {
             AuditableRestAction mockAuditableRestAction = mock(AuditableRestAction.class);
 

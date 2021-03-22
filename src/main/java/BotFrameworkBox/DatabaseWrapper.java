@@ -2,19 +2,21 @@ package BotFrameworkBox;
 
 import ExceptionsBox.BadStateException;
 import ExceptionsBox.ContactEwaException;
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonDeserializer;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
 import java.sql.*;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.Map;
 
 public class DatabaseWrapper {
-    private static Set<DatabaseEntryType> databaseEntryTypes = null;
+    /**
+     * Maps the key that will be used in the database to the name of a class that extends DatabaseEntryType
+     * Used to prevent duplicate keys as keys are user-defined
+     */
+    private static final BiMap<Integer, String> databaseEntryTypes = HashBiMap.create();
 
     /*
      * Database connection
@@ -26,18 +28,13 @@ public class DatabaseWrapper {
     private static final String tableName = "blobs";
     private static Connection connection = null;
 
-    public static void setDatabaseEntryTypes(DatabaseEntryType[] databaseEntryTypes) {
-        Set<Integer> keys = new HashSet<>();
-        for (DatabaseEntryType type : databaseEntryTypes) {
-            if (!type.getReturnClass().isAssignableFrom(JsonDeserializer.class)) {
+    public static void setDatabaseEntryTypes(BiMap<Integer, Class> databaseEntryTypes) {
+        for (Map.Entry<Integer, Class> entry : databaseEntryTypes.entrySet()) {
+            if (!DatabaseEntryType.class.isAssignableFrom(entry.getValue())) {
                 throw new BadStateException("Database entry types must extend DatabaseItem");
             }
-            if (keys.contains(type.getKey())) {
-                throw new BadStateException("Duplicate key: " + type.getKey());
-            }
-            keys.add(type.getKey());
+            DatabaseWrapper.databaseEntryTypes.put(entry.getKey(), entry.getValue().getName());
         }
-        DatabaseWrapper.databaseEntryTypes = new HashSet<>(Arrays.asList(databaseEntryTypes));
     }
 
     /**
@@ -56,7 +53,8 @@ public class DatabaseWrapper {
                 if (!new File(databaseFileLocation).exists()) {
                     connection.getMetaData();
                 }
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 throw new ContactEwaException("Database connection error");
             }
         }
@@ -65,44 +63,73 @@ public class DatabaseWrapper {
          * Create table
          */
         try (Statement stmt = connection.createStatement()) {
-            stmt.execute("CREATE TABLE IF NOT EXISTS <TBL>"
-                    + " ("
-                    + "guildId text NOT NULL,"
-                    + "entryType int NOT NULL,"
-                    + "entry text NOT NULL,"
-                    + "CONSTRAINT PK_<TBL> PRIMARY KEY(guildId, entryType)"
-                    + ");"
-                    .replaceAll("<TBL>", tableName));
-        } catch (SQLException e) {
+            stmt.execute((
+                    "CREATE TABLE IF NOT EXISTS <TBL>"
+                            + " ("
+                            + "guildId text NOT NULL,"
+                            + "entryType int NOT NULL,"
+                            + "entry text NOT NULL,"
+                            + "CONSTRAINT PK_<TBL> PRIMARY KEY(guildId, entryType)"
+                            + ");"
+            ).replaceAll("<TBL>", tableName));
+        }
+        catch (SQLException e) {
             throw new ContactEwaException("Table creation error");
         }
     }
 
+    // TODO change type param to type Class if possible
     public static <T> T getData(String guild, DatabaseEntryType<T> type) {
-        if (databaseEntryTypes == null) {
-            throw new BadStateException("No DatabaseEntryTypes provided");
-        }
-        if (!databaseEntryTypes.contains(type)) {
+        if (!databaseEntryTypes.containsValue(type.getClass().getName())) {
             throw new BadStateException("DatabaseEntryType not recognised: " + type.getReturnClass().getName());
         }
         getConnection();
 
-        String sql = "Select * FROM " + tableName + " WHERE guildId = ? AND entryType = ?";
+        String returnedJson;
+        String sql = "SELECT * FROM " + tableName + " WHERE guildId = ? AND entryType = ?";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, guild);
-            ps.setInt(2, type.getKey());
+            ps.setInt(2, databaseEntryTypes.inverse().get(type.getClass().getName()));
             final ResultSet rs = ps.executeQuery();
             if (!rs.next()) {
                 return null;
             }
-            String json = rs.getString("entry");
+            returnedJson = rs.getString("entry");
             if (rs.next()) {
                 throw new BadStateException("Database entry not unique");
             }
-            final Gson gson = new GsonBuilder().registerTypeAdapter(type.getReturnClass(), type.getDeserializer()).create();
-            return gson.fromJson(json, type.getReturnClass());
-        } catch (SQLException e) {
+        }
+        catch (SQLException e) {
             throw new BadStateException("Database query failed");
+        }
+        return getGson(type, true).fromJson(returnedJson, type.getReturnClass());
+    }
+
+    public static <T> void saveData(String guild, DatabaseEntryType<T> data) {
+        if (!databaseEntryTypes.containsValue(data.getClass().getName())) {
+            throw new BadStateException("DatabaseEntryType not recognised: " + data.getReturnClass().getName());
+        }
+        getConnection();
+
+        String json = getGson(data, false).toJson(data, data.getClass());
+        String sql = "INSERT INTO " + tableName + " (guildId, entryType, entry) VALUES(?,?,?)";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, guild);
+            ps.setInt(2, databaseEntryTypes.inverse().get(data.getClass().getName()));
+            ps.setString(3, json);
+            ps.executeUpdate();
+        }
+        catch (SQLException e) {
+            throw new BadStateException("Database query failed");
+        }
+    }
+
+    private static Gson getGson(DatabaseEntryType type, boolean serialiser) {
+        if (serialiser) {
+            return new GsonBuilder().registerTypeAdapter(type.getReturnClass(), type.getSerializer()).create();
+        }
+        else {
+            return new GsonBuilder().registerTypeAdapter(type.getReturnClass(), type.getDeserializer()).create();
         }
     }
 
@@ -110,28 +137,17 @@ public class DatabaseWrapper {
         // TODO
     }
 
-    // TODO Remove
-    private static <T extends com.google.gson.JsonDeserializer<T>> Object parseJson(String json, Class<JsonDeserializer<T>> clazz) {
-        JsonDeserializer<T> object;
-        try {
-            object = clazz.getConstructor(String.class).newInstance(json);
-        } catch (NoSuchMethodException | IllegalAccessException | InstantiationException | InvocationTargetException e) {
-            throw new BadStateException("Class construction failed");
-        }
-        final Gson gson = new GsonBuilder().registerTypeAdapter(clazz, object).create();
-        return gson.fromJson(json, clazz);
-    }
-
     /**
      * Change the database mode so that testing doesn't affect live data
      */
     public static void setTestMode() {
-        url = urlPrefix + "JuuzoTest.db";
+        url = urlPrefix + "Test" + databaseFileLocation;
     }
 
-
+    /**
+     * Used as a sanity check
+     */
     public static boolean isInTestMode() {
-        // TODO Testing
         return !url.equals(urlPrefix + databaseFileLocation);
     }
 
@@ -144,7 +160,8 @@ public class DatabaseWrapper {
             if (connection != null) {
                 connection.close();
             }
-        } catch (SQLException e) {
+        }
+        catch (SQLException e) {
             throw new ContactEwaException("Close connection error");
         }
     }

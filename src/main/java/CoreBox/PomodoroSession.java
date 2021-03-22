@@ -339,6 +339,7 @@ public class PomodoroSession {
             StringBuilder pingString = new StringBuilder(":clap: *Bangs Pots* :clap:");
             if (settings.getBooleanSetting(BooleanSetting.PINGS)) {
                 String mentionString = participants.getMentionList();
+                //noinspection ConstantConditions
                 if (mentionString != null && !mentionString.isBlank()) {
                     pingString.append("\n");
                     pingString.append(mentionString);

@@ -5,19 +5,23 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 
+import BotFrameworkBox.DatabaseEntryType;
 import CoreBox.PomodoroSession.*;
 import ExceptionsBox.BadStateException;
 import ExceptionsBox.BadUserInputException;
 import TatsuyaCommands.PomodoroCommand;
+import com.google.gson.*;
 import net.dv8tion.jda.api.Permission;
-import org.jetbrains.annotations.Nullable;
 
 import static CoreBox.PomodoroSession.minutesToDisplayString;
 
 /**
  * Settings such as work/study split for a particular pomodoro session
  */
-public class PomodoroSettings {
+public class PomodoroSettings implements DatabaseEntryType<PomodoroSettings> {
+    /*
+     * Defaults
+     */
     /**
      * Maximum allowed time input in minutes
      */
@@ -26,13 +30,12 @@ public class PomodoroSettings {
      * Minimum allowed time input in minutes
      */
     public static final int minDuration = 5;
-    public static final int minWorkSessionsBeforeLongBreak = 1;
     public static final int maxWorkSessionsBeforeLongBreak = 30;
+    public static final int minWorkSessionsBeforeLongBreak = 1;
     public static final String boolSettingDeliminator = ":";
     public static final String boolSettingOn = "on";
     public static final String boolSettingOff = "off";
-
-    private final Map<SessionState, StateInfo> defaultStates = new HashMap<>() {
+    private static final Map<SessionState, StateInfo> defaultStates = new HashMap<>() {
         {
             put(SessionState.WORK, new StateInfo(SessionState.WORK, 25, Color.BLUE, SessionState.WORK.getDefaultImage()));
             put(SessionState.BREAK, new StateInfo(SessionState.BREAK, 10, Color.CYAN, SessionState.BREAK.getDefaultImage()));
@@ -42,18 +45,33 @@ public class PomodoroSettings {
             put(SessionState.FINISHED, new StateInfo(SessionState.FINISHED, null, null, SessionState.FINISHED.getDefaultImage()));
         }
     };
-    private final Map<SessionState, StateInfo> states = new HashMap<>(defaultStates);
-
-    /**
-     * Presence in the map indicates the setting is on
-     */
-    private Set<BooleanSetting> booleanSettings = new HashSet<>() {
+    private final Set<BooleanSetting> defaultBooleanSettings = new HashSet<>() {
         {
             add(BooleanSetting.PINGS);
             add(BooleanSetting.AUTO);
             add(BooleanSetting.DELETE);
         }
     };
+    private static final Set<Permission> defaultAdminPermissions = new HashSet<>() {
+        {
+            add(Permission.MANAGE_SERVER);
+            add(Permission.ADMINISTRATOR);
+            add(Permission.MANAGE_CHANNEL);
+        }
+    };
+    private static final int defaultTimeoutDuration = 60;
+    private static final String defaultDateFormat = "dd/MM/yyyy";
+    private static final String defaultTimeFormat = "HH:mm";
+
+    /*
+     * Settings
+     */
+    private final Map<SessionState, StateInfo> states = new HashMap<>(defaultStates);
+
+    /**
+     * Presence in the map indicates the setting is on
+     */
+    private Set<BooleanSetting> booleanSettings = new HashSet<>(defaultBooleanSettings);
     /**
      * This setting also dictates whether the long break function will be used
      */
@@ -65,8 +83,7 @@ public class PomodoroSettings {
     private String dateFormat = "dd/MM/yyyy";
     private String timeFormat = "HH:mm";
     private Set<String> bannedMembers = new HashSet<>();
-    // TODO member.hasPermission(Permission.MANAGE_SERVER, Permission.ADMINISTRATOR, Permission.MANAGE_CHANNEL);
-    private Set<Permission> adminPermissions = new HashSet<>();
+    private Set<Permission> adminPermissions = new HashSet<>(defaultAdminPermissions);
 
     public PomodoroSettings() {
     }
@@ -74,23 +91,22 @@ public class PomodoroSettings {
     /**
      * Store information which the clan can change about each state
      */
-    private class StateInfo {
+    private static class StateInfo {
         private final SessionState state;
         private Integer duration;
         Color colour;
         String image;
 
-        public StateInfo(SessionState state) {
+        private StateInfo(SessionState state) {
             this.state = state;
-            StateInfo defaultInfo = defaultStates.get(state);
-            this.duration = defaultInfo.duration;
-            this.colour = defaultInfo.colour;
-            this.image = defaultInfo.image;
+            this.duration = null;
+            this.colour = null;
+            this.image = null;
         }
-
 
         public StateInfo(SessionState state, Integer duration, Color colour, String image) {
             this.state = state;
+            //noinspection ConstantConditions it will be null when generating default states
             StateInfo defaultInfo = defaultStates != null ? defaultStates.get(state) : null;
             this.duration = duration != null ? duration : (defaultInfo != null ? defaultInfo.duration : null);
             this.colour = colour != null ? colour : (defaultInfo != null ? defaultInfo.colour : null);
@@ -110,42 +126,57 @@ public class PomodoroSettings {
             checkDuration(duration);
             this.duration = duration;
         }
-    }
 
-    public void setStateInfo(SessionState state, @Nullable Color color, @Nullable String thumbnail, @Nullable Integer duration) {
-        final StateInfo info;
-        if (states.containsKey(state)) {
-            info = states.get(state);
+        public static StateInfo deserialise(JsonObject object) {
+            String stateString = object.get("state").getAsString();
+            StateInfo info;
+            try {
+                info = new StateInfo(SessionState.valueOf(stateString.toUpperCase()));
+            }
+            catch (IllegalArgumentException e) {
+                throw new BadStateException("Json parse error: unknown session state: " + stateString);
+            }
+            if (object.has("colour")) {
+                info.colour = Color.decode(object.get("colour").getAsString());
+            }
+            if (object.has("image")) {
+                info.image = object.get("image").getAsString();
+            }
+            if (object.has("duration")) {
+                info.duration = object.get("duration").getAsInt();
+            }
+            return info;
         }
-        else {
-            info = new StateInfo(state);
+
+        public JsonElement serialize() {
+            JsonObject main = new JsonObject();
+            main.addProperty("state", state.toString());
+            if (duration != null) {
+                main.addProperty("colour", duration);
+            }
+            if (image != null) {
+                main.addProperty("image", image);
+            }
+            if (duration != null) {
+                main.addProperty("duration", duration);
+            }
+            return main;
         }
 
-        if (color != null) {
-            info.colour = color;
+        /**
+         * Overlay the current object with the non-null elements of info
+         */
+        public void overlay(StateInfo info) {
+            if (info.image != null) {
+                image = info.image;
+            }
+            if (info.colour != null) {
+                colour = info.colour;
+            }
+            if (info.duration != null) {
+                setDuration(info.duration);
+            }
         }
-        if (thumbnail != null) {
-            info.image = thumbnail;
-        }
-        if (duration != null) {
-            info.setDuration(duration);
-        }
-    }
-
-    public void setBooleanSettings(Set<BooleanSetting> booleanSettings) {
-        this.booleanSettings = booleanSettings;
-    }
-
-    public void setTimeoutDuration(int timeoutDuration) {
-        this.timeoutDuration = timeoutDuration;
-    }
-
-    public void setBannedMembers(Set<String> bannedMembers) {
-        this.bannedMembers = bannedMembers;
-    }
-
-    public void setAdminPermissions(Set<Permission> adminPermissions) {
-        this.adminPermissions = adminPermissions;
     }
 
     /**
@@ -153,7 +184,7 @@ public class PomodoroSettings {
      *
      * @throws BadUserInputException if outside of bounds
      */
-    public void checkDuration(Integer duration) {
+    public static void checkDuration(Integer duration) {
         if (duration == null) {
             return;
         }
@@ -169,8 +200,7 @@ public class PomodoroSettings {
      * Will only set properties after validating the input
      *
      * @param args {@link PomodoroCommand#getArgumentFormat()}
-     * @throws BadUserInputException
-     * @throws BadStateException
+     * @throws BadUserInputException if args is invalid
      */
     public void setFromArgs(String args) {
         if (args.isEmpty()) {
@@ -261,23 +291,6 @@ public class PomodoroSettings {
         this.states.get(SessionState.LONG_BREAK).setDuration(longBreakDuration);
     }
 
-    /**
-     * 0 durations will be set to null
-     *
-     * @throws BadStateException if workSessionsBeforeLongBreak is < 0
-     */
-    public void setWorkSessionsBeforeLongBreak(Integer workSessionsBeforeLongBreak) {
-        if (workSessionsBeforeLongBreak != null) {
-            if (workSessionsBeforeLongBreak == 0) {
-                workSessionsBeforeLongBreak = null;
-            }
-            else if (workSessionsBeforeLongBreak < 0) {
-                throw new BadStateException("Must have at least 1 work session before a break (0 to unset)");
-            }
-        }
-        this.workSessionsBeforeLongBreak = workSessionsBeforeLongBreak;
-    }
-
     public boolean getBooleanSetting(BooleanSetting setting) {
         return booleanSettings.contains(setting);
     }
@@ -299,5 +312,118 @@ public class PomodoroSettings {
 
     public DateTimeFormatter getDateTimeFormatter() {
         return DateTimeFormatter.ofPattern((booleanSettings.contains(BooleanSetting.DATE) ? dateFormat + " " : "") + timeFormat + " z");
+    }
+
+    @Override
+    public Class<PomodoroSettings> getReturnClass() {
+        return PomodoroSettings.class;
+    }
+
+    @Override
+    public JsonDeserializer<PomodoroSettings> getDeserializer() {
+        return (json, typeOfT, context) -> {
+            PomodoroSettings pgi = new PomodoroSettings();
+            JsonObject main = json.getAsJsonObject();
+
+            /*
+             * States
+             */
+            if (main.has("states")) {
+                for (JsonElement element : main.getAsJsonArray("states")) {
+                    StateInfo readInfo = StateInfo.deserialise(element.getAsJsonObject());
+                    pgi.states.get(readInfo.state).overlay(readInfo);
+                }
+            }
+
+            /*
+             * Sets
+             */
+            if (main.has("booleanSettings")) {
+                booleanSettings = DatabaseEntryHelper.parseEnumArray(main.getAsJsonArray("booleanSettings"), BooleanSetting.class);
+            }
+            if (main.has("bannedMembers")) {
+                bannedMembers = DatabaseEntryHelper.parseStringArray(main.getAsJsonArray("bannedMembers"));
+            }
+            if (main.has("adminPermissions")) {
+                adminPermissions = DatabaseEntryHelper.parseEnumArray(main.getAsJsonArray("adminPermissions"), Permission.class);
+            }
+
+            /*
+             * Misc
+             */
+            if (main.has("timeoutDuration")) {
+                int timeout = main.get("timeoutDuration").getAsInt();
+                checkDuration(timeout);
+                pgi.timeoutDuration = timeout;
+            }
+            if (main.has("workSessionsBeforeLongBreak")) {
+                pgi.workSessionsBeforeLongBreak = main.get("workSessionsBeforeLongBreak").getAsInt();
+            }
+            if (main.has("dateFormat")) {
+                pgi.dateFormat = main.get("dateFormat").getAsString();
+            }
+            if (main.has("timeFormat")) {
+                pgi.timeFormat = main.get("timeFormat").getAsString();
+            }
+
+            /*
+             * Verify object
+             */
+            // Throws an error if this combination is invalid
+            setLongBreak(pgi.getWorkSessionsBeforeLongBreak(), pgi.states.get(SessionState.LONG_BREAK).duration);
+
+            return pgi;
+        };
+    }
+
+    @Override
+    public JsonSerializer<PomodoroSettings> getSerializer() {
+        return (src, typeOfSrc, context) -> {
+            JsonObject main = new JsonObject();
+
+            /*
+             * States
+             */
+            JsonArray statesJson = new JsonArray();
+            for (StateInfo info : states.values()) {
+                if (!info.equals(defaultStates.get(info.state))) {
+                    statesJson.add(info.serialize());
+                }
+            }
+            if (statesJson.size() > 0) {
+                main.add("states", statesJson);
+            }
+
+            /*
+             * Sets
+             */
+            if (!booleanSettings.equals(defaultBooleanSettings)) {
+                main.add("booleanSettings", DatabaseEntryHelper.toJsonArray(booleanSettings));
+            }
+            if (!bannedMembers.isEmpty()) {
+                main.add("bannedMembers", DatabaseEntryHelper.toJsonArray(bannedMembers));
+            }
+            if (!adminPermissions.equals(defaultAdminPermissions)) {
+                main.add("adminPermissions", DatabaseEntryHelper.toJsonArray(adminPermissions));
+            }
+
+            /*
+             * Misc
+             */
+            if (timeoutDuration != defaultTimeoutDuration) {
+                main.addProperty("timeoutDuration", timeoutDuration);
+            }
+            if (workSessionsBeforeLongBreak != null) {
+                main.addProperty("workSessionsBeforeLongBreak", workSessionsBeforeLongBreak);
+            }
+            if (!dateFormat.equals(defaultDateFormat)) {
+                main.addProperty("dateFormat", dateFormat);
+            }
+            if (!timeFormat.equals(defaultTimeFormat)) {
+                main.addProperty("timeFormat", timeFormat);
+            }
+
+            return main;
+        };
     }
 }
