@@ -35,48 +35,30 @@ public abstract class AbstractCommand implements CommandInterface {
      * Sends the given message in the given channel
      */
     protected static void sendMessage(@NotNull MessageChannel channel, @NotNull MessageEmbed message,
-                                      @NotNull Consumer<Message> callback) {
+            @NotNull Consumer<Message> callback
+    ) {
         channel.sendMessage(message).queue(callback);
     }
-
-
-    /**
-     * @return secondary arguments or an empty list if there are none
-     */
-    protected CommandInterface[] getSecondaryCommands() {
-        return new CommandInterface[0];
-    }
-
-
-    /**
-     * Check whether the member has permission to use the command
-     *
-     * @throws IncorrectPermissionsException if they don't have permission
-     * @throws BadStateException             if the bot is locked
-     */
-    protected void checkPermission(@NotNull Member member) {
-        checkPermission(member, getRequiredRank());
-    }
-
 
     /**
      * Check whether the member has the permission of the given rank
      *
      * @throws IncorrectPermissionsException if they don't have permission
-     * @throws BadStateException             if the bot is locked
+     * @throws BadStateException if the bot is locked
      */
     protected static void checkPermission(@NotNull Member member, @NotNull Rank rank) {
         if (!getRank(member).hasPermission(rank)) {
             throw new IncorrectPermissionsException();
-        } else if (Bot.isIsLocked() && !member.getUser().getId().equalsIgnoreCase(IDs.eywaID)) {
+        }
+        else if (Bot.isIsLocked() && !member.getUser().getId().equalsIgnoreCase(IDs.eywaID)) {
             throw new BadStateException("Bot is currently locked, please try again later");
         }
     }
 
-
     /**
-     * TODO Optimisation store these in a database rather than relying on roles? TODO Idea - Allocate them using
-     * commands
+     * TODO Optimisation store these in a database rather than relying on roles?
+     *
+     * TODO Idea - Allocate them using commands
      *
      * @return the highest rank that matches the user's discord roles
      */
@@ -85,24 +67,45 @@ public abstract class AbstractCommand implements CommandInterface {
         for (Role role : member.getRoles()) {
             try {
                 ranks.add(Rank.valueOf(role.getName().toUpperCase()));
-            } catch (IllegalArgumentException e) {
+            }
+            catch (IllegalArgumentException e) {
                 // Not a rank role, ignore it
             }
         }
 
         if (member.getUser().getId().equals(IDs.eywaID)) {
             return Rank.CREATOR;
-        } else if (ranks.contains(Rank.ADMIN)) {
+        }
+        else if (ranks.contains(Rank.ADMIN)) {
             return Rank.ADMIN;
-        } else if (ranks.contains(Rank.DM)) {
+        }
+        else if (ranks.contains(Rank.DM)) {
             return Rank.DM;
-        } else if (ranks.contains(Rank.BANNED)) {
+        }
+        else if (ranks.contains(Rank.BANNED)) {
             return Rank.BANNED;
-        } else {
+        }
+        else {
             return Rank.USER;
         }
     }
 
+    /**
+     * @return secondary arguments or an empty list if there are none
+     */
+    protected CommandInterface[] getSecondaryCommands() {
+        return new CommandInterface[0];
+    }
+
+    /**
+     * Check whether the member has permission to use the command
+     *
+     * @throws IncorrectPermissionsException if they don't have permission
+     * @throws BadStateException if the bot is locked
+     */
+    protected void checkPermission(@NotNull Member member) {
+        checkPermission(member, getRequiredRank());
+    }
 
     /**
      * @return The category the command falls under for when !help or similar commands are called
@@ -160,12 +163,13 @@ public abstract class AbstractCommand implements CommandInterface {
      * If a valid secondary argument is present, execute it
      *
      * @param clazz The class of the enum that the secondary argument will be valid within
-     * @param args  in the form "<secondary args>" or "<secondary args> <other args>"
-     * @param <T>   the enum that the secondary argument belongs to
+     * @param args in the form "<secondary args>" or "<secondary args> <other args>"
+     * @param <T> the enum that the secondary argument belongs to
      * @throws BadUserInputException If argument is invalid
      */
     protected <T extends Enum<T> & CommandInterface> void executeSecondaryArgument(
-            @NotNull Class<T> clazz, int maxWords, @NotNull String args, @NotNull MessageReceivedEvent event) {
+            @NotNull Class<T> clazz, int maxWords, @NotNull String args, @NotNull MessageReceivedEvent event
+    ) {
         final String[] splitParts = args.toUpperCase().split(" ");
 
         // Try to find the command by each time using one extra word
@@ -183,8 +187,7 @@ public abstract class AbstractCommand implements CommandInterface {
                 break;
             }
             // Ignore as the command may be more than the tested number of words long
-            catch (IllegalArgumentException ignore) {
-            }
+            catch (IllegalArgumentException ignore) { }
 
             if (++testSize > maxWords || testSize > splitParts.length) {
                 throw new BadUserInputException("I don't understand that argument. Use one of " + getArguments());
@@ -196,7 +199,8 @@ public abstract class AbstractCommand implements CommandInterface {
         int commandStrLen = command.toString().length() + testSize - 1;
         if (commandStrLen < args.length()) {
             args = args.substring(commandStrLen).trim();
-        } else {
+        }
+        else {
             args = "";
         }
         command.execute(args, event);

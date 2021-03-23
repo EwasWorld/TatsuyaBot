@@ -30,8 +30,8 @@ public class DatabaseWrapper {
     private static final String sqlPrefix = "jdbc:sqlite:";
     // Used to establish the connection to the database
     private static final String urlPrefix = sqlPrefix + Bot.getPathToTatsuyaBot();
-    private static String url = urlPrefix + databaseFileLocation;
     private static final String tableName = "blobs";
+    private static String url = urlPrefix + databaseFileLocation;
     private static Connection connection = null;
 
     /**
@@ -56,7 +56,9 @@ public class DatabaseWrapper {
                 //noinspection unchecked
                 Constructor constructor = clazz.getDeclaredConstructor();
                 if (!Modifier.isPublic(constructor.getModifiers())) {
-                    throw new BadStateException("default (no-parameter) constructor of " + clazz.getName() + " must be public");
+                    throw new BadStateException(
+                            "default (no-parameter) constructor of " + clazz.getName() + " must be public"
+                    );
                 }
             }
             catch (Exception e) {
@@ -137,7 +139,9 @@ public class DatabaseWrapper {
             throw new BadStateException("Database query failed");
         }
 
-        return getGson(resolvedClass, instantiate(resolvedClass).getDeserializer()).fromJson(returnedJson, resolvedClass);
+        return getGson(resolvedClass, instantiate(resolvedClass).getDeserializer()).fromJson(returnedJson,
+                resolvedClass
+        );
     }
 
     /**
@@ -165,7 +169,9 @@ public class DatabaseWrapper {
      * Ensures that the provided class is in {@link #databaseEntryTypes} Uses the immediate superclass if the provided
      * class is anonymous
      */
-    public static <A extends DatabaseEntryType, T extends DatabaseEntryType> Class<A> checkAndResolveClass(Class<T> clazz) {
+    public static <A extends DatabaseEntryType, T extends DatabaseEntryType> Class<A> checkAndResolveClass(
+            Class<T> clazz
+    ) {
         if (clazz == null) {
             throw new IllegalArgumentException("Cannot be null");
         }
@@ -178,7 +184,8 @@ public class DatabaseWrapper {
             returnClass = clazz.getSuperclass();
         }
         if (returnClass == null || !DatabaseEntryType.class.isAssignableFrom(returnClass)) {
-            throw new BadStateException(clazz.getName() + " not recognised as a database entry type, make sure it's set with setDatabaseEntryTypes");
+            throw new BadStateException(clazz.getName()
+                    + " not recognised as a database entry type, make sure it's set with setDatabaseEntryTypes");
         }
         //noinspection unchecked: Type is checked in above if statement
         return returnClass;

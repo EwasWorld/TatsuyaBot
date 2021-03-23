@@ -16,8 +16,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
-import java.time.*;
-import java.util.*;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -25,15 +30,14 @@ import static org.mockito.Mockito.*;
 
 @SuppressWarnings("ConstantConditions") // If a null pointer exception is unexpectedly thrown, the test should fail
 public class PomodoroUnitTests {
+    private static MessageAction mockMessageAction;
+    /**
+     * List collects all MockMessages created Items are appended to the end, later messages are newer
+     */
+    private static List<MockMessage> mockMessages;
     private final String memberName = "MemberName";
     private Member mockMember;
     private MessageChannel mockChannel;
-    private static MessageAction mockMessageAction;
-    /**
-     * List collects all MockMessages created
-     * Items are appended to the end, later messages are newer
-     */
-    private static List<MockMessage> mockMessages;
     private Instant start;
 
     /*
@@ -89,8 +93,8 @@ public class PomodoroUnitTests {
     }
 
     /**
-     * Quick fire through some valid argument strings to make sure they don't throw an exception
-     * Ensure that the session can start
+     * Quick fire through some valid argument strings to make sure they don't throw an exception Ensure that the session
+     * can start
      */
     @ParameterizedTest
     @ValueSource(strings = {
@@ -137,8 +141,7 @@ public class PomodoroUnitTests {
     }
 
     /**
-     * Ensure an empty string sets the correct defaults
-     * Ensure that the session can start
+     * Ensure an empty string sets the correct defaults Ensure that the session can start
      */
     @Test
     public void newEmpty() {
@@ -161,8 +164,7 @@ public class PomodoroUnitTests {
     }
 
     /**
-     * Ensure that numbers are interpreted in the right order
-     * Ensure that the session can start
+     * Ensure that numbers are interpreted in the right order Ensure that the session can start
      */
     @Test
     public void newFullNumbers() {
@@ -175,8 +177,7 @@ public class PomodoroUnitTests {
     }
 
     /**
-     * Ensure that bool settings are set correctly
-     * Ensure that the session can start
+     * Ensure that bool settings are set correctly Ensure that the session can start
      */
     @Test
     public void newFullBoolSettings() {
@@ -230,7 +231,8 @@ public class PomodoroUnitTests {
         MessageEmbed notStartedEmbed = embeds.get(0);
         List<MessageEmbed.Field> notStartedFields = notStartedEmbed.getFields();
         Assertions.assertTrue(notStartedEmbed.getTitle().contains("NOT STARTED"));
-        Assertions.assertEquals(PomodoroSession.SessionState.NOT_STARTED.getDefaultColour(), notStartedEmbed.getColor());
+        Assertions
+                .assertEquals(PomodoroSession.SessionState.NOT_STARTED.getDefaultColour(), notStartedEmbed.getColor());
         Assertions.assertEquals("Nothing submitted", EmbedFields.WORKING_ON.find(notStartedFields).getValue());
         Assertions.assertEquals("Timer not started", notStartedEmbed.getDescription());
 
@@ -258,10 +260,13 @@ public class PomodoroUnitTests {
         Assertions.assertTrue(workEmbed.getTitle().contains("WORKING"));
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultColour(), workEmbed.getColor());
         Assertions.assertEquals(PomodoroSession.SessionState.WORK.getDefaultImage(), workEmbed.getImage().getUrl());
-        Assertions.assertEquals("25 mins until break\n1 work session until long break (not including this one)", workEmbed.getDescription());
+        Assertions.assertEquals("25 mins until break\n1 work session until long break (not including this one)",
+                workEmbed.getDescription()
+        );
 
         String[] workStatsMessage = EmbedFields.COMPLETED_STATS.find(workFields).getValue().split("\n");
-        Assertions.assertEquals(String.format(statsStarted, ZonedDateTime.ofInstant(start, ZoneId.systemDefault()).format(session.getSettings().getDateTimeFormatter())), workStatsMessage[0]);
+        Assertions.assertEquals(String.format(statsStarted, ZonedDateTime.ofInstant(start, ZoneId.systemDefault())
+                .format(session.getSettings().getDateTimeFormatter())), workStatsMessage[0]);
         Assertions.assertEquals(String.format(statsWorkSessions, 0), workStatsMessage[1]);
         Assertions.assertEquals(String.format(statsStudyTime, 0), workStatsMessage[2]);
 
@@ -296,7 +301,9 @@ public class PomodoroUnitTests {
         List<MessageEmbed.Field> longBreakFields = longBreakEmbed.getFields();
         Assertions.assertTrue(longBreakEmbed.getTitle().contains("LONG BREAK"));
         Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK.getDefaultColour(), longBreakEmbed.getColor());
-        Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK.getDefaultImage(), longBreakEmbed.getImage().getUrl());
+        Assertions.assertEquals(PomodoroSession.SessionState.LONG_BREAK.getDefaultImage(),
+                longBreakEmbed.getImage().getUrl()
+        );
         Assertions.assertEquals("30 mins until work", longBreakEmbed.getDescription());
 
         String longBreakStatsMessage = EmbedFields.COMPLETED_STATS.find(longBreakFields).getValue();
@@ -323,7 +330,9 @@ public class PomodoroUnitTests {
         List<MessageEmbed.Field> finishedFields = finishedEmbed.getFields();
         Assertions.assertTrue(finishedEmbed.getTitle().contains("FINISHED"));
         Assertions.assertEquals(PomodoroSession.SessionState.FINISHED.getDefaultColour(), finishedEmbed.getColor());
-        Assertions.assertEquals(PomodoroSession.SessionState.FINISHED.getDefaultImage(), finishedEmbed.getImage().getUrl());
+        Assertions.assertEquals(PomodoroSession.SessionState.FINISHED.getDefaultImage(),
+                finishedEmbed.getImage().getUrl()
+        );
         Assertions.assertEquals("Session completed", finishedEmbed.getDescription());
         Assertions.assertEquals(longBreakStatsMessage, EmbedFields.COMPLETED_STATS.find(finishedFields).getValue());
 
@@ -356,8 +365,13 @@ public class PomodoroUnitTests {
         session.userPauseSession(currentTime);
         session.userStopSession(currentTime);
 
-        final Emoji[] suspendedEmojis = new Emoji[]{Emoji.PLAY, Emoji.PERSON_HAND_RAISED, Emoji.PERSON_NO_HANDS, Emoji.STOP};
-        final Emoji[] activeEmojis = new Emoji[]{Emoji.SKIP, Emoji.PAUSE, Emoji.PERSON_HAND_RAISED, Emoji.PERSON_NO_HANDS, Emoji.UP_ARROW, Emoji.DOUBLE_UP_ARROW, Emoji.DOWN_ARROW, Emoji.DOUBLE_DOWN_ARROW, Emoji.STOP};
+        final Emoji[] suspendedEmojis = new Emoji[]{Emoji.PLAY, Emoji.PERSON_HAND_RAISED, Emoji.PERSON_NO_HANDS,
+                Emoji.STOP
+        };
+        final Emoji[] activeEmojis = new Emoji[]{Emoji.SKIP, Emoji.PAUSE, Emoji.PERSON_HAND_RAISED,
+                Emoji.PERSON_NO_HANDS, Emoji.UP_ARROW, Emoji.DOUBLE_UP_ARROW, Emoji.DOWN_ARROW, Emoji.DOUBLE_DOWN_ARROW,
+                Emoji.STOP
+        };
         final Emoji[][] messagesExpectedEmojis = new Emoji[][]{
                 suspendedEmojis, // Not Started
                 activeEmojis, // Work
@@ -385,7 +399,8 @@ public class PomodoroUnitTests {
             //noinspection ResultOfMethodCallIgnored
             verify(mockMessage.mock, times(1)).clearReactions();
             //noinspection ResultOfMethodCallIgnored
-            verify(mockMessage.mock, times(messagesExpectedEmojis[messagesProcessed].length)).addReaction(argumentCaptor.capture());
+            verify(mockMessage.mock, times(messagesExpectedEmojis[messagesProcessed].length))
+                    .addReaction(argumentCaptor.capture());
 
             List<String> expectedEmoji = new ArrayList<>();
             for (Emoji emoji : messagesExpectedEmojis[messagesProcessed]) {
@@ -457,15 +472,15 @@ public class PomodoroUnitTests {
     }
 
     /**
-     * Ensure that
-     * - skipping cycles through the correct states
-     * - pausing and resuming works correctly and doesn't interfere with the skipping cycling
-     * - double pausing/Resuming is rejected
+     * Ensure that - skipping cycles through the correct states - pausing and resuming works correctly and doesn't
+     * interfere with the skipping cycling - double pausing/Resuming is rejected
      */
     @Test
     public void generalStateTransitions() {
         int workBeforeLongBreak = 3;
-        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 20 30 " + workBeforeLongBreak, start);
+        PomodoroSession session = new PomodoroSession(mockMember, mockChannel, "25 20 30 " + workBeforeLongBreak,
+                start
+        );
 
         Assertions.assertEquals(PomodoroSession.SessionState.NOT_STARTED, session.getSessionState());
         Assertions.assertThrows(BadUserInputException.class, () -> session.update(start, true));
@@ -565,6 +580,35 @@ public class PomodoroUnitTests {
         Assertions.assertThrows(BadUserInputException.class, () -> session[0].userStopSession(start));
     }
 
+    private enum EmbedFields {
+        PARTICIPANTS("Ping"), WORKING_ON("working"), COMPLETED_STATS("Completed"), SESSION_SETTINGS("Settings");
+
+        String titleStringContains;
+
+        EmbedFields(String titleStringContains) {
+            this.titleStringContains = titleStringContains;
+        }
+
+        public static int countBlank(List<MessageEmbed.Field> fields) {
+            int count = 0;
+            for (MessageEmbed.Field field : fields) {
+                if (field.getName().equals("\u200E") && field.getValue().equals("\u200E")) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        public MessageEmbed.Field find(List<MessageEmbed.Field> fields) throws NotFoundException {
+            for (MessageEmbed.Field field : fields) {
+                if (field.getName().contains(this.titleStringContains)) {
+                    return field;
+                }
+            }
+            throw new NotFoundException(this.toString() + " was not found");
+        }
+    }
+
     /**
      * Helper function for calling methods in a loop
      */
@@ -630,35 +674,6 @@ public class PomodoroUnitTests {
             String contentString = embed.getTitle();
             contentString += embed.getDescription();
             return contentString;
-        }
-    }
-
-    private enum EmbedFields {
-        PARTICIPANTS("Ping"), WORKING_ON("working"), COMPLETED_STATS("Completed"), SESSION_SETTINGS("Settings");
-
-        String titleStringContains;
-
-        EmbedFields(String titleStringContains) {
-            this.titleStringContains = titleStringContains;
-        }
-
-        public MessageEmbed.Field find(List<MessageEmbed.Field> fields) throws NotFoundException {
-            for (MessageEmbed.Field field : fields) {
-                if (field.getName().contains(this.titleStringContains)) {
-                    return field;
-                }
-            }
-            throw new NotFoundException(this.toString() + " was not found");
-        }
-
-        public static int countBlank(List<MessageEmbed.Field> fields) {
-            int count = 0;
-            for (MessageEmbed.Field field : fields) {
-                if (field.getName().equals("\u200E") && field.getValue().equals("\u200E")) {
-                    count++;
-                }
-            }
-            return count;
         }
     }
 }

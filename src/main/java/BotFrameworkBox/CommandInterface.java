@@ -36,7 +36,7 @@ public interface CommandInterface {
 
     /**
      * @return Arguments which can come after the command name. Separated by / in the form secondary command {required}
-     * [optional]. "" for no arguments. e.g. {new/end} or add {number} / get [number]
+     *         [optional]. "" for no arguments. e.g. {new/end} or add {number} / get [number]
      */
     String getArguments();
 
@@ -45,7 +45,5 @@ public interface CommandInterface {
      * TODO Command aliases
      * @return Other strings which can invoke the command in the chat
      */
-//    String[] commandAliases();
-
-    // TODO Example
+    //    String[] commandAliases();
 }

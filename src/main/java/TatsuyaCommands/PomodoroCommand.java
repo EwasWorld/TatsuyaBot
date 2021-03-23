@@ -33,11 +33,12 @@ import static BotFrameworkBox.Bot.commandPrefix;
  * TODO Setting: change time format of start time displayed
  */
 public class PomodoroCommand extends AbstractCommand implements EmojiReactionCommand {
-    public static String POMODORO_COMMAND = "pomodoro";
-    private static final Map<String, PomodoroSession> sessionsByChannelId = new HashMap<>();
-    private static final Set<String> bannedMembers = new HashSet<>();
     protected static final int defaultShortBump = 5;
     protected static final int defaultBigBump = 20;
+    private static final Map<String, PomodoroSession> sessionsByChannelId = new HashMap<>();
+    private static final Set<String> bannedMembers = new HashSet<>();
+    private static final Map<Emoji, List<PomodoroSecondaryCommands>> emojiCommandMapping = getEmojiCommandMapping();
+    public static String POMODORO_COMMAND = "pomodoro";
     private static boolean updateThreadRunning = false;
     private static final Runnable updateRunnable = () -> {
         updateThreadRunning = true;
@@ -77,7 +78,6 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
         }
         updateThreadRunning = false;
     };
-    private static final Map<Emoji, List<PomodoroSecondaryCommands>> emojiCommandMapping = getEmojiCommandMapping();
 
     private static Map<Emoji, List<PomodoroSecondaryCommands>> getEmojiCommandMapping() {
         Map<Emoji, List<PomodoroSecondaryCommands>> emojiCommandMapping = new HashMap<>();
@@ -92,6 +92,72 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
             emojiCommandMapping.get(emoji).add(command);
         }
         return emojiCommandMapping;
+    }
+
+    private static List<PomodoroSecondaryCommands> getAvailableActions(SessionState state) {
+        List<PomodoroSecondaryCommands> commands = new ArrayList<>() {
+            {
+                add(PomodoroSecondaryCommands.JOIN);
+                add(PomodoroSecondaryCommands.LEAVE);
+                add(PomodoroSecondaryCommands.STOP);
+            }
+        };
+        switch (state) {
+            case WORK:
+            case BREAK:
+            case LONG_BREAK:
+                commands.add(PomodoroSecondaryCommands.PAUSE);
+                commands.add(PomodoroSecondaryCommands.SKIP);
+                commands.add(PomodoroSecondaryCommands.BUMP);
+                commands.add(PomodoroSecondaryCommands.BIG_BUMP);
+                commands.add(PomodoroSecondaryCommands.LOWER);
+                commands.add(PomodoroSecondaryCommands.BIG_LOWER);
+                break;
+            case NOT_STARTED:
+                commands.add(PomodoroSecondaryCommands.START);
+                break;
+            case PAUSED:
+                commands.add(PomodoroSecondaryCommands.RESUME);
+                break;
+            case FINISHED:
+                return new ArrayList<>();
+        }
+        return commands;
+    }
+
+    public static List<Emoji> getAvailableEmojis(SessionState state) {
+        List<PomodoroSecondaryCommands> commands = getAvailableActions(state);
+        commands.sort(Comparator.comparingInt(PomodoroSecondaryCommands::getEmojiPriority));
+
+        List<Emoji> emojis = new ArrayList<>();
+        for (PomodoroSecondaryCommands command : commands) {
+            if (command.getEmoji() == null) {
+                throw new BadStateException("Specified command doesn't have an emoji");
+            }
+            if (emojis.contains(command.getEmoji())) {
+                throw new BadStateException("Ambiguous emoji");
+            }
+            emojis.add(command.getEmoji());
+        }
+        return emojis;
+    }
+
+    private static PomodoroSession getSession(String channelId) {
+        PomodoroSession session = sessionsByChannelId.get(channelId);
+        if (session == null) {
+            throw new BadUserInputException(
+                    "There's no session in this channel, try " + commandPrefix + POMODORO_COMMAND + " "
+                            + PomodoroSecondaryCommands.NEW.getCommand());
+        }
+        return session;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected CommandInterface[] getSecondaryCommands() {
+        return PomodoroSecondaryCommands.values();
     }
 
     /**
@@ -141,14 +207,6 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
     @Override
     public String getArguments() {
         return super.getArguments();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    protected CommandInterface[] getSecondaryCommands() {
-        return PomodoroSecondaryCommands.values();
     }
 
     /**
@@ -212,54 +270,6 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
         return false;
     }
 
-    private static List<PomodoroSecondaryCommands> getAvailableActions(SessionState state) {
-        List<PomodoroSecondaryCommands> commands = new ArrayList<>() {
-            {
-                add(PomodoroSecondaryCommands.JOIN);
-                add(PomodoroSecondaryCommands.LEAVE);
-                add(PomodoroSecondaryCommands.STOP);
-            }
-        };
-        switch (state) {
-            case WORK:
-            case BREAK:
-            case LONG_BREAK:
-                commands.add(PomodoroSecondaryCommands.PAUSE);
-                commands.add(PomodoroSecondaryCommands.SKIP);
-                commands.add(PomodoroSecondaryCommands.BUMP);
-                commands.add(PomodoroSecondaryCommands.BIG_BUMP);
-                commands.add(PomodoroSecondaryCommands.LOWER);
-                commands.add(PomodoroSecondaryCommands.BIG_LOWER);
-                break;
-            case NOT_STARTED:
-                commands.add(PomodoroSecondaryCommands.START);
-                break;
-            case PAUSED:
-                commands.add(PomodoroSecondaryCommands.RESUME);
-                break;
-            case FINISHED:
-                return new ArrayList<>();
-        }
-        return commands;
-    }
-
-    public static List<Emoji> getAvailableEmojis(SessionState state) {
-        List<PomodoroSecondaryCommands> commands = getAvailableActions(state);
-        commands.sort(Comparator.comparingInt(PomodoroSecondaryCommands::getEmojiPriority));
-
-        List<Emoji> emojis = new ArrayList<>();
-        for (PomodoroSecondaryCommands command : commands) {
-            if (command.getEmoji() == null) {
-                throw new BadStateException("Specified command doesn't have an emoji");
-            }
-            if (emojis.contains(command.getEmoji())) {
-                throw new BadStateException("Ambiguous emoji");
-            }
-            emojis.add(command.getEmoji());
-        }
-        return emojis;
-    }
-
     public String getArgumentFormat() {
         return PomodoroSecondaryCommands.NEW.getArguments();
     }
@@ -276,7 +286,9 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                     throw new BadUserInputException("This channel already has a pomodoro session going on");
                 }
 
-                PomodoroSession session = new PomodoroSession(event.getMember(), event.getChannel(), args, Instant.now());
+                PomodoroSession session = new PomodoroSession(event.getMember(), event.getChannel(), args,
+                        Instant.now()
+                );
                 sessionsByChannelId.put(channelId, session);
                 if (!updateThreadRunning) {
                     new Thread(updateRunnable).start();
@@ -296,7 +308,8 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
              */
             @Override
             public String getArguments() {
-                return "[work time] [break time] [{long break time} {work sessions before long break}] [pings:on] [auto:on] [delete:on] [images:on]";
+                return "[work time] [break time] [{long break time} {work sessions before long break}] [pings:on] "
+                        + "[auto:on] [delete:on] [images:on]";
             }
         },
         JOIN {
@@ -317,7 +330,9 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                 if (args.isEmpty() || isBanned) {
                     session.getParticipants().addParticipant(event.getMember(), ping);
                     if (!args.isEmpty()) {
-                        sendMessage(event.getChannel(), event.getMember().getEffectiveName() + ", you've been banned from posting a status.");
+                        sendMessage(event.getChannel(),
+                                event.getMember().getEffectiveName() + ", you've been banned from posting a status."
+                        );
                     }
                 }
                 else {
@@ -989,7 +1004,11 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                 for (Member member : mentions) {
                     bannedMembers.add(member.getId());
                 }
-                sendMessage(event.getChannel(), String.format("%s member%s banned from posting statuses", mentions.size(), mentions.size() != 1 ? "s" : ""));
+                sendMessage(event.getChannel(),
+                        String.format("%s member%s banned from posting statuses", mentions.size(),
+                                mentions.size() != 1 ? "s" : ""
+                        )
+                );
             }
 
             /**
@@ -1029,7 +1048,11 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                 for (Member member : mentions) {
                     bannedMembers.remove(member.getId());
                 }
-                sendMessage(event.getChannel(), String.format("%s member%s unbanned from posting statuses", mentions.size(), mentions.size() != 1 ? "s" : ""));
+                sendMessage(event.getChannel(),
+                        String.format("%s member%s unbanned from posting statuses", mentions.size(),
+                                mentions.size() != 1 ? "s" : ""
+                        )
+                );
             }
 
             /**
@@ -1056,6 +1079,24 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
                 return "@bannedMember";
             }
         };
+
+        private static void bump(String stringAmount, int defaultAmount, boolean increase, PomodoroSession session) {
+            int amount = defaultAmount;
+            if (stringAmount != null && !stringAmount.isBlank()) {
+                try {
+                    amount = Integer.parseInt(stringAmount);
+                }
+                catch (NumberFormatException e) {
+                    throw new BadUserInputException("Argument must be a number");
+                }
+            }
+            if (increase) {
+                session.addTimeToCurrentState(amount, Instant.now());
+            }
+            else {
+                session.removeTimeFromCurrentState(amount, Instant.now());
+            }
+        }
 
         /**
          * {@inheritDoc}
@@ -1096,31 +1137,5 @@ public class PomodoroCommand extends AbstractCommand implements EmojiReactionCom
         public boolean removeEmoji() {
             return false;
         }
-
-        private static void bump(String stringAmount, int defaultAmount, boolean increase, PomodoroSession session) {
-            int amount = defaultAmount;
-            if (stringAmount != null && !stringAmount.isBlank()) {
-                try {
-                    amount = Integer.parseInt(stringAmount);
-                }
-                catch (NumberFormatException e) {
-                    throw new BadUserInputException("Argument must be a number");
-                }
-            }
-            if (increase) {
-                session.addTimeToCurrentState(amount, Instant.now());
-            }
-            else {
-                session.removeTimeFromCurrentState(amount, Instant.now());
-            }
-        }
-    }
-
-    private static PomodoroSession getSession(String channelId) {
-        PomodoroSession session = sessionsByChannelId.get(channelId);
-        if (session == null) {
-            throw new BadUserInputException("There's no session in this channel, try " + commandPrefix + POMODORO_COMMAND + " " + PomodoroSecondaryCommands.NEW.getCommand());
-        }
-        return session;
     }
 }

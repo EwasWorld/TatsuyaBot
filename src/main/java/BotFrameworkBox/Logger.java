@@ -58,7 +58,8 @@ public class Logger {
             lines.add("\"\n}");
 
             appendToFile(mainLogFileLocation, lines);
-        } catch (IOException e1) {
+        }
+        catch (IOException e1) {
             e.printStackTrace();
         }
     }
@@ -84,7 +85,8 @@ public class Logger {
         try {
             init(outFile);
             Files.write(outFile, lines, charset, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -104,7 +106,8 @@ public class Logger {
             lines.add("\n]\n}");
 
             appendToFile(outputLocation, lines);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             e.printStackTrace();
         }
 

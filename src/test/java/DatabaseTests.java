@@ -4,7 +4,9 @@ import CoreBox.DatabaseEntryHelper;
 import ExceptionsBox.BadStateException;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.gson.*;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,12 +17,17 @@ import java.util.Set;
 
 @SuppressWarnings("ConstantConditions")
 public class DatabaseTests {
-    public DatabaseTests() {
-    }
-
     public static final String guild = "GuildId";
-    private static BiMap<Integer, Class> databaseEntryTypes;
-
+    public static final TestHelperObjects.WellFormed testData2 = new TestHelperObjects.WellFormed(
+            35,
+            "2 TestData 2",
+            new HashSet<>() {
+                {
+                    add("2 Item1 2");
+                    add("2 Item2 2");
+                }
+            }
+    );
     /*
      * Interestingly, the format `new WellFormed() {{integerItem = 20}}` will result in the type being DatabaseTests$1,
      *   since it seems to take it as an anonymous definition
@@ -35,16 +42,8 @@ public class DatabaseTests {
                 }
             }
     );
-    public static final TestHelperObjects.WellFormed testData2 = new TestHelperObjects.WellFormed(
-            35,
-            "2 TestData 2",
-            new HashSet<>() {
-                {
-                    add("2 Item1 2");
-                    add("2 Item2 2");
-                }
-            }
-    );
+    private static BiMap<Integer, Class> databaseEntryTypes;
+    public DatabaseTests() { }
 
     @BeforeEach
     public void setup() {
@@ -111,7 +110,8 @@ public class DatabaseTests {
     @Test
     public void nonPublicClass() {
         databaseEntryTypes.put(99, TestHelperObjects.PackagePrivateClass.class);
-        Assertions.assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
+        Assertions
+                .assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
     }
 
     /**
@@ -120,7 +120,8 @@ public class DatabaseTests {
     @Test
     public void noDefaultConstructor() {
         databaseEntryTypes.put(99, TestHelperObjects.NoDefaultConstructor.class);
-        Assertions.assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
+        Assertions
+                .assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
     }
 
     /**
@@ -129,7 +130,8 @@ public class DatabaseTests {
     @Test
     public void privateConstructor() {
         databaseEntryTypes.put(99, TestHelperObjects.PrivateConstructor.class);
-        Assertions.assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
+        Assertions
+                .assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
     }
 
     /**
@@ -138,7 +140,8 @@ public class DatabaseTests {
     @Test
     public void doesNotImplement() {
         databaseEntryTypes.put(99, TestHelperObjects.DoesNotImplement.class);
-        Assertions.assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
+        Assertions
+                .assertThrows(BadStateException.class, () -> DatabaseWrapper.setDatabaseEntryTypes(databaseEntryTypes));
     }
 
     /**
@@ -146,19 +149,17 @@ public class DatabaseTests {
      */
     public static class TestHelperObjects {
         /**
-         * Required to make class instantiations and class names correct
-         * https://stackoverflow.com/questions/17006585/why-does-classname1-class-generate-in-this-situation/17006628
+         * Required to make class instantiations and class names correct https://stackoverflow
+         * .com/questions/17006585/why-does-classname1-class-generate-in-this-situation/17006628
          */
-        public TestHelperObjects() {
-        }
+        public TestHelperObjects() { }
 
         public static class WellFormed implements DatabaseEntryType<WellFormed> {
             Integer integerItem = null;
             String stringItem = null;
             Set<String> setItem = null;
 
-            public WellFormed() {
-            }
+            public WellFormed() { }
 
             public WellFormed(Integer integerItem, String stringItem, Set<String> setItem) {
                 this.integerItem = integerItem;
@@ -201,8 +202,7 @@ public class DatabaseTests {
             }
 
             /**
-             * {@inheritDoc}
-             * Allows objects to be compared using assertEquals too
+             * {@inheritDoc} Allows objects to be compared using assertEquals too
              */
             @Override
             public boolean equals(Object obj) {
@@ -210,13 +210,13 @@ public class DatabaseTests {
                     return super.equals(obj);
                 }
                 WellFormed a = (WellFormed) obj;
-                return integerItem.equals(a.integerItem) && stringItem.equals(a.stringItem) && setItem.equals(a.setItem);
+                return integerItem.equals(a.integerItem) && stringItem.equals(a.stringItem) && setItem
+                        .equals(a.setItem);
             }
         }
 
         static class PackagePrivateClass implements DatabaseEntryType<PackagePrivateClass> {
-            public PackagePrivateClass() {
-            }
+            public PackagePrivateClass() { }
 
             @Override
             public Class<PackagePrivateClass> getReturnClass() {
@@ -235,8 +235,7 @@ public class DatabaseTests {
         }
 
         public static class NoDefaultConstructor implements DatabaseEntryType<NoDefaultConstructor> {
-            NoDefaultConstructor() {
-            }
+            NoDefaultConstructor() { }
 
             @Override
             public Class<NoDefaultConstructor> getReturnClass() {
@@ -255,8 +254,7 @@ public class DatabaseTests {
         }
 
         public static class PrivateConstructor implements DatabaseEntryType<PrivateConstructor> {
-            PrivateConstructor() {
-            }
+            PrivateConstructor() { }
 
             @Override
             public Class<PrivateConstructor> getReturnClass() {
@@ -275,8 +273,7 @@ public class DatabaseTests {
         }
 
         public static class DoesNotImplement {
-            public DoesNotImplement() {
-            }
+            public DoesNotImplement() { }
         }
     }
 }

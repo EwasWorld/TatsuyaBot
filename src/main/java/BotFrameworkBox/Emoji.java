@@ -164,21 +164,6 @@ public enum Emoji {
         return map;
     }
 
-
-    public String getDiscordAlias() {
-        return discordAlias;
-    }
-
-
-    public String getUnicode() {
-        return unicodeFullString;
-    }
-
-    public void addAsReaction(Message message) {
-        message.addReaction(unicodeFullString).queue();
-    }
-
-
     public static List<Emoji> getLetters() {
         List<Emoji> emojiArguments = new ArrayList<>();
         emojiArguments.add(Emoji.LETTER_A);
@@ -208,5 +193,17 @@ public enum Emoji {
         emojiArguments.add(Emoji.LETTER_Y);
         emojiArguments.add(Emoji.LETTER_Z);
         return emojiArguments;
+    }
+
+    public String getDiscordAlias() {
+        return discordAlias;
+    }
+
+    public String getUnicode() {
+        return unicodeFullString;
+    }
+
+    public void addAsReaction(Message message) {
+        message.addReaction(unicodeFullString).queue();
     }
 }

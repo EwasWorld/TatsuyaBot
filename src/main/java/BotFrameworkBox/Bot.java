@@ -26,17 +26,16 @@ import java.util.*;
 
 
 public class Bot {
+    // TODO Make this changable
+    public static final String commandPrefix = "!";
+    // private static String resourceFilePath = pathToJuuzoBot + "src/main/resources/";
+    private static final Map<String, AbstractCommand> commands = new HashMap<>();
     // Database and other information is stored in this location
     private static String pathToTatsuyaBot = IDs.pathToTatsuyaBot;
     // TODO Temporary file path while I figure out how to get the ideal one (commented out underneath) working
     private static String resourceFilePath = "resources/";
-    //    private static String resourceFilePath = pathToJuuzoBot + "src/main/resources/";
-    private static final Map<String, AbstractCommand> commands = new HashMap<>();
     // Prevents anyone other than me from using the bot
     private static boolean isLocked = false;
-    // TODO Make this changable
-    public static final String commandPrefix = "!";
-
 
     public static void main(String[] args) {
         // Change the path to the specified one rather than using the default one
@@ -61,7 +60,8 @@ public class Bot {
         try {
             final JDA jda = builder.build();
             jda.addEventListener(new CommandListener());
-        } catch (LoginException e) {
+        }
+        catch (LoginException e) {
             System.err.println(e);
         }
     }
@@ -82,7 +82,8 @@ public class Bot {
                 if (!commands.containsKey(c.getCommand())) {
                     commands.put(c.getCommand().toUpperCase(), c);
                 }
-            } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
+            }
+            catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                     NoSuchMethodException e) {
                 e.printStackTrace();
             }
@@ -116,42 +117,55 @@ public class Bot {
 
 
     private static class CommandListener extends ListenerAdapter {
+        /**
+         * Removes the command string and the commandPrefix from the start of the message and returns the remainder
+         */
+        private static String getRemainingMessage(String command, String message) {
+            message = message.substring(commandPrefix.length());
+            if (!message.equalsIgnoreCase(command)) {
+                return message.substring(command.length() + 1);
+            }
+            else {
+                return "";
+            }
+        }
+
+        @Override
+        public void onGuildMessageDelete(GuildMessageDeleteEvent event) {
+            super.onGuildMessageDelete(event);
+            for (AbstractCommand command : commands.values()) {
+                if (command instanceof MessageDeletedCommand && ((MessageDeletedCommand) command)
+                        .onMessageDeleted(event.getMessageIdLong())) {
+                    break;
+                }
+            }
+        }
+
         @Override
         public void onGuildMessageReactionAdd(GuildMessageReactionAddEvent event) {
             super.onGuildMessageReactionAdd(event);
             if (!event.getMember().getUser().isBot()) {
                 for (AbstractCommand command : commands.values()) {
-                    if (command instanceof EmojiReactionCommand && ((EmojiReactionCommand) command).executeFromAddReaction(event)) {
+                    if (command instanceof EmojiReactionCommand && ((EmojiReactionCommand) command)
+                            .executeFromAddReaction(event)) {
                         break;
                     }
                 }
             }
         }
-
 
         @Override
         public void onGuildMessageReactionRemove(GuildMessageReactionRemoveEvent event) {
             super.onGuildMessageReactionRemove(event);
             if (!event.getMember().getUser().isBot()) {
                 for (AbstractCommand command : commands.values()) {
-                    if (command instanceof EmojiReactionCommand && ((EmojiReactionCommand) command).executeFromRemoveReaction(event)) {
+                    if (command instanceof EmojiReactionCommand && ((EmojiReactionCommand) command)
+                            .executeFromRemoveReaction(event)) {
                         break;
                     }
                 }
             }
         }
-
-
-        @Override
-        public void onGuildMessageDelete(GuildMessageDeleteEvent event) {
-            super.onGuildMessageDelete(event);
-            for (AbstractCommand command : commands.values()) {
-                if (command instanceof MessageDeletedCommand && ((MessageDeletedCommand) command).onMessageDeleted(event.getMessageIdLong())) {
-                    break;
-                }
-            }
-        }
-
 
         /*
          * Logs messages for use with Quotes
@@ -184,31 +198,20 @@ public class Bot {
                     throw new BadUserInputException("I have no memory of this command (" + commandPrefix + "help)");
                 }
                 commands.get(command).execute(args, event);
-            } catch (BadUserInputException | BadStateException | IncorrectPermissionsException e) {
+            }
+            catch (BadUserInputException | BadStateException | IncorrectPermissionsException e) {
                 event.getChannel().sendMessage(e.getMessage()).queue();
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 // Log unexpected errors
                 e.printStackTrace();
                 Logger.logEvent(event.getMessage().getContentRaw(), e);
             }
         }
 
-
-        /**
-         * Removes the command string and the commandPrefix from the start of the message and returns the remainder
-         */
-        private static String getRemainingMessage(String command, String message) {
-            message = message.substring(commandPrefix.length());
-            if (!message.equalsIgnoreCase(command)) {
-                return message.substring(command.length() + 1);
-            } else {
-                return "";
-            }
-        }
-
-
         /**
          * Displays a welcome message when a new member joins the server
+         *
          * TODO Implement this doesn't activate when a new member joins
          */
         @Override

@@ -3,7 +3,8 @@ package CoreBox;
 import ExceptionsBox.BadStateException;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.gson.*;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -29,7 +30,8 @@ public class DatabaseEntryHelper {
                 set.add(T.valueOf(clazz, settingString.toUpperCase()));
             }
             catch (IllegalArgumentException e) {
-                throw new BadStateException("Json parse error: unknown " + clazz.getName() + " setting: " + settingString);
+                throw new BadStateException(
+                        "Json parse error: unknown " + clazz.getName() + " setting: " + settingString);
             }
         }
         return set;

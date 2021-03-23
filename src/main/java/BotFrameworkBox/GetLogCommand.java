@@ -25,8 +25,8 @@ public class GetLogCommand extends AbstractCommand {
         checkPermission(event.getMember());
 
         // TODO Fix send log file
-//        final Message message = new MessageBuilder().append("Log").build();
-//        event.getChannel().sendFile(Logger.getLoggedEventsToSend(), message).queue();
+        // final Message message = new MessageBuilder().append("Log").build();
+        // event.getChannel().sendFile(Logger.getLoggedEventsToSend(), message).queue();
     }
 
 
